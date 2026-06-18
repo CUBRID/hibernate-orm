@@ -27,6 +27,7 @@ import org.hibernate.boot.jaxb.mapping.spi.JaxbIdImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbManyToManyImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbManyToOneImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbOneToManyImpl;
+import org.hibernate.boot.jaxb.mapping.spi.JaxbTransientImpl;
 import org.hibernate.boot.jaxb.spi.Binding;
 import org.hibernate.boot.registry.classloading.spi.ClassLoaderService;
 import org.hibernate.boot.spi.MetadataImplementor;
@@ -248,6 +249,121 @@ public class HbmTransformationJaxbTests {
 					.orElseThrow();
 			assertThat( childEntity.getTable() ).isNotNull();
 			assertThat( childEntity.getTable().getName() ).isEqualTo( "us_child" );
+		} );
+	}
+
+	@Test
+	public void testUnmappedPropertiesAreTransient(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/unmapped-property/hbm.xml", scope, (transformed) -> {
+			final JaxbEntityImpl entity = transformed.getEntities().stream()
+					.filter( e -> e.getClazz() != null && e.getClazz().endsWith( "UnmappedPropEntity" ) )
+					.findFirst()
+					.orElseThrow();
+
+			final var attributes = entity.getAttributes();
+
+			assertThat( attributes.getIdAttributes() )
+					.extracting( JaxbIdImpl::getName )
+					.contains( "id" );
+
+			assertThat( attributes.getBasicAttributes() )
+					.extracting( JaxbBasicImpl::getName )
+					.contains( "name", "anotherCompositeName" )
+					.doesNotContain( "compositeName" );
+
+			final var transients = attributes.getTransients();
+
+			assertThat( transients )
+					.extracting( JaxbTransientImpl::getName )
+					.as( "Unmapped field 'unmappedRef' should be marked as transient" )
+					.contains( "unmappedRef" )
+					.as( "compositeName has no backing field and access is field — should not be transient" )
+					.doesNotContain( "compositeName" )
+					.as( "Mapped properties should not be marked as transient" )
+					.doesNotContain( "id", "name", "anotherCompositeName" );
+		} );
+	}
+
+	@Test
+	public void testSubselectEntityTransformation(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/subselect-entity/hbm.xml", scope, (transformed) -> {
+			assertThat( transformed.getEntities() ).hasSize( 2 );
+
+			final JaxbEntityImpl viewEntity = transformed.getEntities().stream()
+					.filter( e -> "SubselectView".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( viewEntity.getTableExpression() )
+					.as( "Subselect entity should have a table-expression" )
+					.isNotNull();
+			assertThat( viewEntity.getTableExpression() ).contains( "select id, name, value from base_table" );
+			assertThat( viewEntity.getTable() )
+					.as( "Subselect entity should not have a regular table" )
+					.isNull();
+			assertThat( viewEntity.getSynchronizeTables() ).hasSize( 1 );
+			assertThat( viewEntity.getSynchronizeTables().get( 0 ).getTable() ).isEqualTo( "base_table" );
+			assertThat( viewEntity.isMutable() ).isFalse();
+
+			for ( JaxbBasicImpl basic : viewEntity.getAttributes().getBasicAttributes() ) {
+				if ( basic.getColumn() != null ) {
+					assertThat( basic.getColumn().getTable() )
+							.as( "Column for property '%s' should not have a table attribute on a subselect entity", basic.getName() )
+							.isNull();
+				}
+			}
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-20590" )
+	public void testCollectionOptimisticLockTransformation(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/collection-optimistic-lock/hbm.xml", scope, (transformed) -> {
+			assertThat( transformed.getEntities() ).hasSize( 3 );
+
+			final JaxbEntityImpl ownerEntity = transformed.getEntities().stream()
+					.filter( e -> "Owner".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( ownerEntity.getAttributes().getOneToManyAttributes() ).hasSize( 2 );
+
+			final JaxbOneToManyImpl lockedItems = ownerEntity.getAttributes().getOneToManyAttributes().stream()
+					.filter( a -> "lockedItems".equals( a.getName() ) )
+					.findFirst()
+					.orElseThrow();
+			assertThat( lockedItems.isOptimisticLock() )
+					.as( "lockedItems should have optimistic-lock=true (default)" )
+					.isTrue();
+
+			final JaxbOneToManyImpl unlockedItems = ownerEntity.getAttributes().getOneToManyAttributes().stream()
+					.filter( a -> "unlockedItems".equals( a.getName() ) )
+					.findFirst()
+					.orElseThrow();
+			assertThat( unlockedItems.isOptimisticLock() )
+					.as( "unlockedItems should have optimistic-lock=false" )
+					.isFalse();
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-20591" )
+	public void testCompositeIdKeyManyToOneMappedByTransformation(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/composite-key-many-to-one/hbm.xml", scope, (transformed) -> {
+			assertThat( transformed.getEntities() ).hasSize( 2 );
+
+			final JaxbEntityImpl parentEntity = transformed.getEntities().stream()
+					.filter( e -> "Parent".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( parentEntity.getAttributes().getOneToManyAttributes() ).hasSize( 1 );
+
+			final JaxbOneToManyImpl children = parentEntity.getAttributes().getOneToManyAttributes().get( 0 );
+			assertThat( children.getName() ).isEqualTo( "children" );
+			assertThat( children.getMappedBy() )
+					.as( "mapped-by should resolve to 'id.parent' for key-many-to-one inside composite-id" )
+					.isEqualTo( "id.parent" );
 		} );
 	}
 
