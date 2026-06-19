@@ -27,6 +27,7 @@ import org.hibernate.boot.jaxb.mapping.spi.JaxbIdImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbManyToManyImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbManyToOneImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbOneToManyImpl;
+import org.hibernate.boot.jaxb.mapping.spi.JaxbOneToOneImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbTransientImpl;
 import org.hibernate.boot.jaxb.spi.Binding;
 import org.hibernate.boot.registry.classloading.spi.ClassLoaderService;
@@ -316,7 +317,89 @@ public class HbmTransformationJaxbTests {
 	}
 
 	@Test
-	@JiraKey( "HHH-20590" )
+	@JiraKey( "HHH-20599" )
+	public void testCompositeElementColumnTableTransformation(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/composite-element/hbm.xml", scope, (transformed) -> {
+			assertThat( transformed.getEmbeddables() ).hasSize( 1 );
+
+			final JaxbEmbeddableImpl embeddable = transformed.getEmbeddables().get( 0 );
+			for ( JaxbBasicImpl basic : embeddable.getAttributes().getBasicAttributes() ) {
+				if ( basic.getColumn() != null ) {
+					assertThat( basic.getColumn().getTable() )
+							.as( "Column '%s' should not have a table attribute — it belongs to the collection table, not a secondary table",
+									basic.getName() )
+							.isNull();
+				}
+			}
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-20598" )
+	public void testSortNaturalTransformation(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/sort-natural/hbm.xml", scope, (transformed) -> {
+			assertThat( transformed.getEntities() ).hasSize( 1 );
+
+			final JaxbEntityImpl personEntity = transformed.getEntities().get( 0 );
+			assertThat( personEntity.getAttributes().getElementCollectionAttributes() ).hasSize( 1 );
+
+			final var nickNames = personEntity.getAttributes().getElementCollectionAttributes().get( 0 );
+			assertThat( nickNames.getName() ).isEqualTo( "nickNames" );
+			assertThat( nickNames.getSortNatural() )
+					.as( "sort='natural' should become <sort-natural/>, not sort='natural'" )
+					.isNotNull();
+			assertThat( nickNames.getSort() )
+					.as( "sort attribute should be null when sort-natural is used" )
+					.isNull();
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-20596" )
+	public void testNonAggregatedCompositeIdKeyManyToOneTransformation(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/non-aggregate-key-many-to-one/hbm.xml", scope, (transformed) -> {
+			assertThat( transformed.getEntities() ).hasSize( 2 );
+
+			final JaxbEntityImpl detailEntity = transformed.getEntities().stream()
+					.filter( e -> "Detail".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( detailEntity.getAttributes().getManyToOneAttributes() )
+					.as( "key-many-to-one should be transformed to a many-to-one with id=true" )
+					.hasSize( 1 );
+
+			final JaxbManyToOneImpl manyToOne = detailEntity.getAttributes().getManyToOneAttributes().get( 0 );
+			assertThat( manyToOne.getName() ).isEqualTo( "master" );
+			assertThat( manyToOne.isId() )
+					.as( "many-to-one should have id=true for non-aggregated composite-id key-many-to-one" )
+					.isTrue();
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-20593" )
+	public void testCompositePkPropertyRefOneToOneTransformation(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/composite-pk-property-ref/hbm.xml", scope, (transformed) -> {
+			assertThat( transformed.getEntities() ).hasSize( 2 );
+
+			final JaxbEntityImpl entityA = transformed.getEntities().stream()
+					.filter( e -> "EntityA".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( entityA.getAttributes().getOneToOneAttributes() ).hasSize( 1 );
+
+			final JaxbOneToOneImpl oneToOne = entityA.getAttributes().getOneToOneAttributes().get( 0 );
+			assertThat( oneToOne.getName() ).isEqualTo( "entityB" );
+			assertThat( oneToOne.getMappedBy() )
+					.as( "mapped-by should resolve to 'entityA' via property-ref on composite-PK entity" )
+					.isEqualTo( "entityA" );
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-20591" )
 	public void testCollectionOptimisticLockTransformation(ServiceRegistryScope scope) {
 		transformAndVerify( "xml/jaxb/mapping/collection-optimistic-lock/hbm.xml", scope, (transformed) -> {
 			assertThat( transformed.getEntities() ).hasSize( 3 );

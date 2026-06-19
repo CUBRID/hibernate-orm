@@ -46,7 +46,7 @@ import org.hibernate.query.ResultListTransformer;
 import org.hibernate.query.TupleTransformer;
 import org.hibernate.query.criteria.JpaExpression;
 import org.hibernate.query.hql.internal.QuerySplitter;
-import org.hibernate.query.named.NamedSqmQueryMemento;
+import org.hibernate.query.named.spi.NamedSqmQueryMemento;
 import org.hibernate.query.named.internal.CriteriaSelectionMementoImpl;
 import org.hibernate.query.named.internal.HqlSelectionMementoImpl;
 import org.hibernate.query.named.internal.SqmSelectionMemento;
@@ -61,23 +61,23 @@ import org.hibernate.query.spi.QueryParameterBinding;
 import org.hibernate.query.spi.QueryParameterBindings;
 import org.hibernate.query.spi.SelectQueryPlan;
 import org.hibernate.query.spi.SelectionQueryImplementor;
-import org.hibernate.query.sqm.SqmQuerySource;
+import org.hibernate.query.sqm.spi.SqmQuerySource;
 import org.hibernate.query.sqm.internal.AggregatedSelectQueryPlanImpl;
 import org.hibernate.query.sqm.internal.ConcreteSqmSelectQueryPlan;
 import org.hibernate.query.sqm.internal.DomainParameterXref;
 import org.hibernate.query.sqm.internal.SqmUtil;
 import org.hibernate.query.sqm.spi.InterpretationsKeySource;
 import org.hibernate.query.sqm.spi.SqmStatementAccess;
-import org.hibernate.query.sqm.tree.AbstractSqmDmlStatement;
-import org.hibernate.query.sqm.tree.SqmStatement;
-import org.hibernate.query.sqm.sql.BaseSqmToSqlAstConverter;
-import org.hibernate.query.sqm.tree.expression.SqmLiteral;
-import org.hibernate.query.sqm.tree.expression.SqmParameter;
-import org.hibernate.query.sqm.tree.from.SqmAttributeJoin;
-import org.hibernate.query.sqm.tree.from.SqmFrom;
-import org.hibernate.query.sqm.tree.from.SqmRoot;
-import org.hibernate.query.sqm.tree.select.SqmQuerySpec;
-import org.hibernate.query.sqm.tree.select.SqmSelectStatement;
+import org.hibernate.query.sqm.tree.spi.AbstractSqmDmlStatement;
+import org.hibernate.query.sqm.tree.spi.SqmStatement;
+import org.hibernate.query.sqm.sql.spi.BaseSqmToSqlAstConverter;
+import org.hibernate.query.sqm.tree.spi.expression.SqmLiteral;
+import org.hibernate.query.sqm.tree.spi.expression.SqmParameter;
+import org.hibernate.query.sqm.tree.spi.from.SqmAttributeJoin;
+import org.hibernate.query.sqm.tree.spi.from.SqmFrom;
+import org.hibernate.query.sqm.tree.spi.from.SqmRoot;
+import org.hibernate.query.sqm.tree.spi.select.SqmQuerySpec;
+import org.hibernate.query.sqm.tree.spi.select.SqmSelectStatement;
 import org.hibernate.sql.results.internal.TupleMetadata;
 import org.hibernate.sql.results.spi.SingleResultConsumer;
 
@@ -95,7 +95,7 @@ import static java.lang.Boolean.TRUE;
 import static org.hibernate.Timeouts.WAIT_FOREVER_MILLI;
 import static org.hibernate.cfg.QuerySettings.FAIL_ON_PAGINATION_OVER_COLLECTION_FETCH;
 import static org.hibernate.query.KeyedPage.KeyInterpretation.KEY_OF_FIRST_ON_NEXT_PAGE;
-import static org.hibernate.query.QueryLogging.QUERY_MESSAGE_LOGGER;
+import static org.hibernate.query.internal.QueryLogging.QUERY_MESSAGE_LOGGER;
 import static org.hibernate.query.common.FetchClauseType.PERCENT_ONLY;
 import static org.hibernate.query.common.FetchClauseType.PERCENT_WITH_TIES;
 import static org.hibernate.query.internal.KeyBasedPagination.paginate;
@@ -107,8 +107,8 @@ import static org.hibernate.query.spi.SqlOmittingQueryOptions.omitSqlQueryOption
 import static org.hibernate.query.sqm.internal.AppliedGraphs.containsCollectionFetches;
 import static org.hibernate.query.sqm.internal.SqmInterpretationsKey.createInterpretationsKey;
 import static org.hibernate.query.sqm.internal.SqmUtil.validateCriteriaQuery;
-import static org.hibernate.query.sqm.tree.SqmCopyContext.noParamCopyContext;
-import static org.hibernate.query.sqm.tree.SqmCopyContext.simpleContext;
+import static org.hibernate.query.sqm.tree.spi.SqmCopyContext.noParamCopyContext;
+import static org.hibernate.query.sqm.tree.spi.SqmCopyContext.simpleContext;
 
 /// Implementation of `SelectionQuery` based on a [SqmSelectStatement] SQM AST.
 ///
@@ -527,12 +527,6 @@ public class SelectionQueryImpl<R>
 
 	@Override
 	@Nonnull
-	public CacheMode getCacheMode() {
-		return queryOptions.getCacheMode();
-	}
-
-	@Override
-	@Nonnull
 	public SelectionQueryImplementor<R> setCacheMode(@Nonnull CacheMode cacheMode) {
 		queryOptions.setCacheMode( cacheMode );
 		return this;
@@ -541,26 +535,28 @@ public class SelectionQueryImpl<R>
 	@Override
 	@Nonnull
 	public CacheRetrieveMode getCacheRetrieveMode() {
-		return queryOptions.getCacheRetrieveMode();
+		final var mode = queryOptions.getCacheRetrieveMode();
+		return mode != null ? mode : getCacheMode().getJpaRetrieveMode();
 	}
 
 	@Override
 	@Nonnull
 	public SelectionQueryImplementor<R> setCacheRetrieveMode(@Nonnull CacheRetrieveMode cacheRetrieveMode) {
-		queryOptions.setCacheRetrieveMode( cacheRetrieveMode );
+		super.setCacheRetrieveMode( cacheRetrieveMode );
 		return this;
 	}
 
 	@Override
 	@Nonnull
 	public CacheStoreMode getCacheStoreMode() {
-		return queryOptions.getCacheStoreMode();
+		final var mode = queryOptions.getCacheStoreMode();
+		return mode != null ? mode : getCacheMode().getJpaStoreMode();
 	}
 
 	@Override
 	@Nonnull
 	public SelectionQueryImplementor<R> setCacheStoreMode(@Nonnull CacheStoreMode cacheStoreMode) {
-		queryOptions.setCacheStoreMode( cacheStoreMode );
+		super.setCacheStoreMode( cacheStoreMode );
 		return this;
 	}
 

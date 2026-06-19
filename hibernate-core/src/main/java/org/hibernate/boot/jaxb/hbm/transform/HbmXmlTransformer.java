@@ -164,6 +164,7 @@ import org.hibernate.mapping.Component;
 import org.hibernate.mapping.Formula;
 import org.hibernate.mapping.KeyValue;
 import org.hibernate.mapping.ManyToOne;
+import org.hibernate.mapping.ToOne;
 import org.hibernate.mapping.OneToMany;
 import org.hibernate.mapping.PersistentClass;
 import org.hibernate.mapping.Property;
@@ -1096,6 +1097,12 @@ public class HbmXmlTransformer {
 			ColumnAndFormulaTarget target,
 			ColumnDefaults columnDefaults,
 			String table) {
+		if ( table != null
+				&& currentBaseTable != null
+				&& ( currentBaseTable.isPhysicalTable() || currentBaseTable.isSubselect() )
+				&& currentBaseTable.getName().equals( table ) ) {
+			table = null;
+		}
 		for ( int i = 0; i < value.getSelectables().size(); i++ ) {
 			final var selectable = value.getSelectables().get( i );
 			if ( selectable instanceof Formula formula ) {
@@ -1296,6 +1303,10 @@ public class HbmXmlTransformer {
 		}
 		if ( persistentClass.getIdentifierProperty() != null ) {
 			mappedPropertyNames.add( persistentClass.getIdentifierProperty().getName() );
+		}
+		else if ( persistentClass instanceof RootClass rootClass
+				&& rootClass.getIdentifier() instanceof Component compositeId ) {
+			compositeId.getProperties().forEach( p -> mappedPropertyNames.add( p.getName() ) );
 		}
 		if ( persistentClass instanceof RootClass rootClass && rootClass.getVersion() != null ) {
 			mappedPropertyNames.add( rootClass.getVersion().getName() );
@@ -1673,8 +1684,13 @@ public class HbmXmlTransformer {
 		oneToOne.setForeignKey( new JaxbForeignKeyImpl() );
 		oneToOne.getForeignKey().setName( hbmOneToOne.getForeignKey() );
 		if ( isNotEmpty( hbmOneToOne.getPropertyRef() ) ) {
-			oneToOne.setPropertyRef( new JaxbPropertyRefImpl() );
-			oneToOne.getPropertyRef().setName( hbmOneToOne.getPropertyRef() );
+			if ( isPropertyRefBackReference( hbmOneToOne, propertyInfo ) ) {
+				oneToOne.setMappedBy( hbmOneToOne.getPropertyRef() );
+			}
+			else {
+				oneToOne.setPropertyRef( new JaxbPropertyRefImpl() );
+				oneToOne.getPropertyRef().setName( hbmOneToOne.getPropertyRef() );
+			}
 		}
 		for ( String formula : hbmOneToOne.getFormula() ) {
 			oneToOne.getJoinColumnOrJoinFormula().add( formula );
@@ -1690,6 +1706,26 @@ public class HbmXmlTransformer {
 		transferFetchable( hbmOneToOne.getLazy(), hbmOneToOne.getFetch(), hbmOneToOne.getOuterJoin(), hbmOneToOne.isConstrained(), oneToOne );
 
 		attributes.getOneToOneAttributes().add( oneToOne );
+	}
+
+	private boolean isPropertyRefBackReference(JaxbHbmOneToOneType hbmOneToOne, PropertyInfo propertyInfo) {
+		final String targetEntityName = isNotEmpty( hbmOneToOne.getEntityName() )
+				? hbmOneToOne.getEntityName()
+				: hbmOneToOne.getClazz();
+		final var targetEntityInfo = transformationState.getEntityInfoByName().get( targetEntityName );
+		if ( targetEntityInfo == null ) {
+			return false;
+		}
+		final var refPropertyInfo = targetEntityInfo.propertyInfoMap().get( hbmOneToOne.getPropertyRef() );
+		if ( refPropertyInfo == null ) {
+			return false;
+		}
+		final Value refValue = refPropertyInfo.bootModelProperty().getValue();
+		if ( !( refValue instanceof ToOne refToOne ) ) {
+			return false;
+		}
+		final String declaringEntityName = propertyInfo.bootModelProperty().getPersistentClass().getEntityName();
+		return declaringEntityName.equals( refToOne.getReferencedEntityName() );
 	}
 
 	private void transferManyToOne(
@@ -1912,18 +1948,12 @@ public class HbmXmlTransformer {
 		}
 
 		if ( source instanceof JaxbHbmSetType set ) {
-			final String sort = set.getSort();
-			if ( isNotEmpty( sort ) && !"unsorted".equals( sort ) ) {
-				target.setSort( sort );
-			}
+			transferSort( set.getSort(), target );
 			target.setOrderBy( set.getOrderBy() );
 			target.setClassification( LimitedCollectionClassification.SET );
 		}
 		else if ( source instanceof JaxbHbmMapType map ) {
-			final String sort = map.getSort();
-			if ( isNotEmpty( sort ) && !"unsorted".equals( sort ) ) {
-				target.setSort( sort );
-			}
+			transferSort( map.getSort(), target );
 			target.setOrderBy( map.getOrderBy() );
 
 			transferMapKey( map, target );
@@ -1959,6 +1989,17 @@ public class HbmXmlTransformer {
 					target
 			);
 			target.setClassification( LimitedCollectionClassification.LIST );
+		}
+	}
+
+	private void transferSort(String sort, JaxbPluralAttribute target) {
+		if ( isNotEmpty( sort ) && !"unsorted".equals( sort ) ) {
+			if ( "natural".equals( sort ) ) {
+				target.setSortNatural( new JaxbPluralAnyMappingImpl.JaxbSortNaturalImpl() );
+			}
+			else {
+				target.setSort( sort );
+			}
 		}
 	}
 
@@ -2223,12 +2264,20 @@ public class HbmXmlTransformer {
 		embeddable.setClazz( embeddableClassName );
 		embeddable.setName( embeddableName );
 		embeddable.setAttributes( new JaxbEmbeddableAttributesContainerImpl() );
-		transferBaseAttributes(
-				partRole,
-				compositeElement.getAttributes(),
-				componentTypeInfo,
-				embeddable.getAttributes()
-		);
+
+		final var previousBaseTable = currentBaseTable;
+		currentBaseTable = componentTypeInfo.table();
+		try {
+			transferBaseAttributes(
+					partRole,
+					compositeElement.getAttributes(),
+					componentTypeInfo,
+					embeddable.getAttributes()
+			);
+		}
+		finally {
+			currentBaseTable = previousBaseTable;
+		}
 		mappingXmlBinding.getRoot().getEmbeddables().add( embeddable );
 	}
 
@@ -3042,8 +3091,11 @@ public class HbmXmlTransformer {
 						keyPropertyInfo
 				) );
 			}
-			else if ( hbmIdProperty instanceof JaxbHbmCompositeKeyManyToOneType ) {
-				handleUnsupported( "Transformation of <key-many-to-one/> not supported" );
+			else if ( hbmIdProperty instanceof JaxbHbmCompositeKeyManyToOneType hbmKeyManyToOne ) {
+				final PropertyInfo keyManyToOneInfo = componentTypeInfo.propertyInfoMap().get( hbmKeyManyToOne.getName() );
+				final var jaxbManyToOne = transformCompositeKeyManyToOne( hbmKeyManyToOne, keyManyToOneInfo );
+				jaxbManyToOne.setId( true );
+				mappingXmlEntity.getAttributes().getManyToOneAttributes().add( jaxbManyToOne );
 			}
 			else {
 				throw new AssertionFailure( "Unexpected non-aggregated composite id property kind : " + hbmIdProperty );

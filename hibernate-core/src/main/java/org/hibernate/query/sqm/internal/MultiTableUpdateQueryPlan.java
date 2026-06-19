@@ -7,12 +7,13 @@ package org.hibernate.query.sqm.internal;
 import org.hibernate.query.spi.DomainQueryExecutionContext;
 import org.hibernate.query.sqm.mutation.spi.MultiTableHandlerBuildResult;
 import org.hibernate.query.sqm.mutation.spi.SqmMultiTableMutationStrategy;
-import org.hibernate.query.sqm.tree.update.SqmUpdateStatement;
+import org.hibernate.query.sqm.tree.spi.update.SqmUpdateStatement;
 
 /**
  * @author Steve Ebersole
  */
-public class MultiTableUpdateQueryPlan extends AbstractMultiTableMutationQueryPlan<SqmUpdateStatement<?>, SqmMultiTableMutationStrategy> {
+public class MultiTableUpdateQueryPlan
+		extends AbstractMultiTableMutationQueryPlan<SqmUpdateStatement<?>, SqmMultiTableMutationStrategy> {
 
 	public MultiTableUpdateQueryPlan(
 			SqmUpdateStatement<?> sqmUpdate,
