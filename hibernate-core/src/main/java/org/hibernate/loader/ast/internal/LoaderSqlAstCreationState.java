@@ -4,10 +4,11 @@
  */
 package org.hibernate.loader.ast.internal;
 
+import jakarta.annotation.Nonnull;
 import jakarta.persistence.Timeout;
 import jakarta.persistence.CacheRetrieveMode;
 import jakarta.persistence.CacheStoreMode;
-import org.hibernate.FlushMode;
+import jakarta.persistence.QueryFlushMode;
 import org.hibernate.LockMode;
 import org.hibernate.LockOptions;
 import org.hibernate.engine.spi.FetchOptions;
@@ -48,6 +49,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
+
+import static java.util.Collections.emptyList;
 
 /**
  * Helper used when generating the database-snapshot select query
@@ -270,8 +273,9 @@ public class LoaderSqlAstCreationState
 	}
 
 	@Override
-	public FlushMode getFlushMode() {
-		return null;
+	@Nonnull
+	public QueryFlushMode getQueryFlushMode() {
+		return QueryFlushMode.DEFAULT;
 	}
 
 	@Override
@@ -322,6 +326,7 @@ public class LoaderSqlAstCreationState
 	}
 
 	@Override
+	@Nonnull
 	public LockOptions getLockOptions() {
 		return lockOptions;
 	}
@@ -332,8 +337,9 @@ public class LoaderSqlAstCreationState
 	}
 
 	@Override
+	@Nonnull
 	public List<String> getDatabaseHints() {
-		return null;
+		return emptyList();
 	}
 
 	@Override
@@ -342,8 +348,9 @@ public class LoaderSqlAstCreationState
 	}
 
 	@Override
+	@Nonnull
 	public Limit getLimit() {
-		return null;
+		return Limit.NONE;
 	}
 
 	@Override

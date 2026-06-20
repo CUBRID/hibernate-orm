@@ -123,6 +123,7 @@ import static org.hibernate.query.hql.internal.HqlHelper.*;
 public class AnnotationMetaEntity extends AnnotationMeta {
 
 	private static final String ID_CLASS_MEMBER_NAME = "<ID_CLASS>";
+	private static final String ERROR_ANNOTATION_VALUE = "<error>";
 
 	private final ImportContext importContext;
 	private final @Nullable AnnotationMeta parent;
@@ -1560,13 +1561,14 @@ public class AnnotationMetaEntity extends AnnotationMeta {
 		final var annotationValue = getAnnotationValue( annotation );
 		if ( annotationValue != null ) {
 			final var fragment = annotationValue.getValue().toString();
-			if ( !fragment.isBlank() ) {
+			if ( !fragment.isBlank() && !ERROR_ANNOTATION_VALUE.equals( fragment ) ) {
 				try {
 					OrderByFragmentTranslator.check( fragment );
 				}
 				catch (SyntaxException e) {
-					final var message = "Error in ordering: " + e.getMessage();
-					context.message( memberOfClass, annotation, annotationValue, message, Diagnostic.Kind.ERROR );
+					context.message( memberOfClass, annotation, annotationValue,
+							"error in ordering: " + e.getMessage(),
+							Diagnostic.Kind.ERROR );
 				}
 				catch (Exception ignored) {
 					// do nothing with it
@@ -1727,9 +1729,8 @@ public class AnnotationMetaEntity extends AnnotationMeta {
 			Element memberOfClass, AnnotationMirror annotation, AnnotationValue annotationVal, TypeElement assocTypeElement) {
 		final var mappedBy = annotationVal.getValue().toString();
 		if ( mappedBy != null && !mappedBy.isEmpty()
-			// this happens for a typesafe ref, e.g. Page_BOOK
-			// TODO: we should queue it to validate it later somehow
-			&& !mappedBy.equals( "<error>" ) ) {
+			// typesafe refs such as Page_BOOK are unresolved while the metamodel is generated
+			&& !mappedBy.equals( ERROR_ANNOTATION_VALUE ) ) {
 			if ( mappedBy.indexOf( '.' ) > 0 ) {
 				//we don't know how to handle paths yet
 				return;
@@ -3110,7 +3111,7 @@ public class AnnotationMetaEntity extends AnnotationMeta {
 			return new SelectAnnotation( annotationMirror, null, "" );
 		}
 		final var path = value.getValue().toString();
-		if ( path.contains( "<error>" ) ) {
+		if ( path.contains( ERROR_ANNOTATION_VALUE ) ) {
 			throw new ProcessLaterException();
 		}
 		return new SelectAnnotation( annotationMirror, value, path );
@@ -3545,7 +3546,7 @@ public class AnnotationMetaEntity extends AnnotationMeta {
 
 	private OrderBy orderByExpression(AnnotationMirror orderBy, TypeElement entityType, ExecutableElement method) {
 		final var fieldName = castNonNull( getAnnotationValue( orderBy ) ).getValue().toString();
-		if ( fieldName.equals( "<error>" ) ) {
+		if ( fieldName.equals( ERROR_ANNOTATION_VALUE ) ) {
 			throw new ProcessLaterException();
 		}
 		final var descendingOrNull = getAnnotationValue( orderBy, "descending" );
@@ -3663,7 +3664,7 @@ public class AnnotationMetaEntity extends AnnotationMeta {
 				@SuppressWarnings("unchecked")
 				final var annotationValues = (List<AnnotationValue>) enabledFetchProfiles.getValue();
 				final var result = annotationValues.stream().map( AnnotationValue::toString ).collect( toList() );
-				if ( result.stream().anyMatch( "<error>"::equals ) ) {
+				if ( result.stream().anyMatch( ERROR_ANNOTATION_VALUE::equals ) ) {
 					throw new ProcessLaterException();
 				}
 				return result;
@@ -5455,7 +5456,7 @@ public class AnnotationMetaEntity extends AnnotationMeta {
 			final var name =
 					castNonNull( getAnnotationValue( param ) )
 							.getValue().toString();
-			if ( name.contains( "<error>" ) ) {
+			if ( name.contains( ERROR_ANNOTATION_VALUE ) ) {
 				throw new ProcessLaterException();
 			}
 			return name;
@@ -5473,7 +5474,7 @@ public class AnnotationMetaEntity extends AnnotationMeta {
 			final var name =
 					castNonNull( getAnnotationValue( by ) )
 							.getValue().toString();
-			if ( name.contains( "<error>" ) ) {
+			if ( name.contains( ERROR_ANNOTATION_VALUE ) ) {
 				throw new ProcessLaterException();
 			}
 			return name
@@ -5484,7 +5485,7 @@ public class AnnotationMetaEntity extends AnnotationMeta {
 			final var name =
 					castNonNull( getAnnotationValue( param ) )
 							.getValue().toString();
-			if ( name.contains( "<error>" ) ) {
+			if ( name.contains( ERROR_ANNOTATION_VALUE ) ) {
 				throw new ProcessLaterException();
 			}
 			return name;

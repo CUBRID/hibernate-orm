@@ -928,7 +928,7 @@ public class MutationQueryImpl<T>
 					name,
 					targetType,
 					sqm,
-					queryOptions.getFlushMode(),
+					queryOptions.getQueryFlushMode(),
 					queryOptions.getTimeout(),
 					getComment(),
 					Map.of()
@@ -940,7 +940,7 @@ public class MutationQueryImpl<T>
 					hql,
 					targetType,
 					Map.of(),
-					queryOptions.getFlushMode(),
+					queryOptions.getQueryFlushMode(),
 					queryOptions.getTimeout(),
 					getComment(),
 					Map.of()

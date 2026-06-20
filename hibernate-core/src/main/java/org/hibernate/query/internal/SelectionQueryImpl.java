@@ -103,7 +103,7 @@ import static org.hibernate.query.internal.KeyedResult.collectKeys;
 import static org.hibernate.query.internal.KeyedResult.collectResults;
 import static org.hibernate.query.internal.QueryHelper.buildTupleMetadata;
 import static org.hibernate.query.internal.QueryHelper.determineResultType;
-import static org.hibernate.query.spi.SqlOmittingQueryOptions.omitSqlQueryOptions;
+import static org.hibernate.query.internal.SqlOmittingQueryOptions.omitSqlQueryOptions;
 import static org.hibernate.query.sqm.internal.AppliedGraphs.containsCollectionFetches;
 import static org.hibernate.query.sqm.internal.SqmInterpretationsKey.createInterpretationsKey;
 import static org.hibernate.query.sqm.internal.SqmUtil.validateCriteriaQuery;
@@ -1138,7 +1138,7 @@ public class SelectionQueryImpl<R>
 					queryOptions.isResultCachingEnabled(),
 					queryOptions.getResultCacheRegionName(),
 					queryOptions.getCacheMode(),
-					queryOptions.getFlushMode(),
+					queryOptions.getQueryFlushMode(),
 					queryOptions.isReadOnly(),
 					lockOptions.getLockMode(),
 					lockOptions.getScope(),
@@ -1157,7 +1157,7 @@ public class SelectionQueryImpl<R>
 					hql,
 					actualResultType,
 					getEntityGraph() == null ? null : getEntityGraph().getName(),
-					queryOptions.getFlushMode(),
+					queryOptions.getQueryFlushMode(),
 					queryOptions.getTimeout(),
 					queryOptions.getComment(),
 					queryOptions.isReadOnly(),

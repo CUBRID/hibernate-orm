@@ -5,9 +5,9 @@
 package org.hibernate.boot.query.internal;
 
 import jakarta.annotation.Nonnull;
+import jakarta.persistence.QueryFlushMode;
 import jakarta.persistence.Timeout;
 import jakarta.annotation.Nullable;
-import org.hibernate.FlushMode;
 import org.hibernate.boot.query.NamedQueryDefinition;
 
 import java.util.Map;
@@ -19,37 +19,45 @@ public abstract class AbstractNamedQueryDefinition<T> implements NamedQueryDefin
 	protected final String name;
 	protected final String location;
 
-	protected final FlushMode flushMode;
+	protected final @Nonnull QueryFlushMode queryFlushMode;
 	protected final Timeout timeout;
 	protected final String comment;
 	protected final Map<String,Object> hints;
 
 	public AbstractNamedQueryDefinition(
-			String name, String location,
-			FlushMode flushMode, Timeout timeout, String comment, Map<String, Object> hints) {
+			@Nonnull String name,
+			@Nullable String location,
+			@Nullable QueryFlushMode queryFlushMode,
+			@Nullable Timeout timeout,
+			@Nullable String comment,
+			@Nonnull Map<String, Object> hints) {
 		this.name = name;
 		this.location = location;
-		this.flushMode = flushMode;
+		this.queryFlushMode = queryFlushMode == null ? QueryFlushMode.DEFAULT : queryFlushMode;
 		this.timeout = timeout;
 		this.comment = comment;
 		this.hints = hints;
 	}
 
+	@Nonnull
 	@Override
 	public String getRegistrationName() {
 		return name;
 	}
 
+	@Nonnull
 	@Override
-	public FlushMode getQueryFlushMode() {
-		return flushMode;
+	public QueryFlushMode getQueryFlushMode() {
+		return queryFlushMode;
 	}
 
+	@Nullable
 	@Override
 	public Timeout getTimeout() {
 		return timeout;
 	}
 
+	@Nullable
 	@Override
 	public String getComment() {
 		return comment;
@@ -61,8 +69,9 @@ public abstract class AbstractNamedQueryDefinition<T> implements NamedQueryDefin
 		return hints;
 	}
 
+	@Nullable
 	@Override
-	public @Nullable String getLocation() {
+	public String getLocation() {
 		return location;
 	}
 }

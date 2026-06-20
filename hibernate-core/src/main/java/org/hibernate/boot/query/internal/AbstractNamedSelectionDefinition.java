@@ -4,10 +4,12 @@
  */
 package org.hibernate.boot.query.internal;
 
+import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
 import jakarta.persistence.PessimisticLockScope;
+import jakarta.persistence.QueryFlushMode;
 import jakarta.persistence.Timeout;
 import org.hibernate.CacheMode;
-import org.hibernate.FlushMode;
 import org.hibernate.LockMode;
 import org.hibernate.Locking;
 import org.hibernate.Timeouts;
@@ -36,13 +38,24 @@ public abstract class AbstractNamedSelectionDefinition<R>
 	protected final Locking.FollowOn followOnLockingStrategy;
 
 	public AbstractNamedSelectionDefinition(
-			String name, String location,
-			FlushMode flushMode, Timeout timeout, String comment,
-			Boolean readOnly, Integer fetchSize, Integer firstRow, Integer maxRows,
-			Boolean cacheable, String cacheRegion, CacheMode cacheMode,
-			LockMode lockMode, PessimisticLockScope lockScope, Timeout lockTimeout, Locking.FollowOn followOnLockingStrategy,
-			Map hints) {
-		super( name, location, flushMode, timeout, comment, hints );
+			@Nonnull String name,
+			@Nullable String location,
+			@Nullable QueryFlushMode queryFlushMode,
+			@Nullable Timeout timeout,
+			@Nullable String comment,
+			@Nullable Boolean readOnly,
+			@Nullable Integer fetchSize,
+			@Nullable Integer firstRow,
+			@Nullable Integer maxRows,
+			@Nullable Boolean cacheable,
+			@Nullable String cacheRegion,
+			@Nullable CacheMode cacheMode,
+			@Nullable LockMode lockMode,
+			@Nullable PessimisticLockScope lockScope,
+			@Nullable Timeout lockTimeout,
+			@Nullable Locking.FollowOn followOnLockingStrategy,
+			@Nonnull Map<String, Object> hints) {
+		super( name, location, queryFlushMode, timeout, comment, hints );
 		this.readOnly = readOnly;
 		this.fetchSize = cleanInteger( fetchSize, -1 );
 		this.firstRow = cleanInteger( firstRow, -1 );

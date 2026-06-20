@@ -5,9 +5,9 @@
 package org.hibernate.query.named.internal;
 
 import jakarta.annotation.Nonnull;
-import jakarta.persistence.Timeout;
 import jakarta.annotation.Nullable;
-import org.hibernate.FlushMode;
+import jakarta.persistence.QueryFlushMode;
+import jakarta.persistence.Timeout;
 import org.hibernate.internal.util.StringHelper;
 import org.hibernate.query.named.spi.NamedQueryMemento;
 
@@ -23,30 +23,30 @@ public abstract class AbstractQueryMemento<R>
 
 	protected final @Nullable Class<R> queryType;
 
-	protected final FlushMode flushMode;
-	protected final Timeout timeout;
-	protected final String comment;
+	protected final @Nonnull QueryFlushMode queryFlushMode;
+	protected final @Nullable Timeout timeout;
+	protected final @Nullable String comment;
 
 	protected final Map<String, Object> hints;
 
 	protected AbstractQueryMemento(
-			String name,
+			@Nonnull String name,
 			@Nullable Class<R> queryType,
-			FlushMode flushMode,
-			Timeout timeout,
-			String comment,
-			Map<String, Object> hints) {
+			@Nullable QueryFlushMode queryFlushMode,
+			@Nullable Timeout timeout,
+			@Nullable String comment,
+			@Nonnull Map<String, Object> hints) {
 		this.name = name;
 		this.queryType = queryType == void.class ? null : queryType;
-		this.flushMode = flushMode;
+		this.queryFlushMode = queryFlushMode == null ? QueryFlushMode.DEFAULT : queryFlushMode;
 		this.timeout = timeout;
 		this.comment = StringHelper.nullIfEmpty( comment );
 		this.hints = hints;
 	}
 
-	public AbstractQueryMemento(String name, AbstractQueryMemento<R> original) {
+	public AbstractQueryMemento(@Nonnull String name, @Nonnull AbstractQueryMemento<R> original) {
 		this.name = name;
-		this.flushMode = original.flushMode;
+		this.queryFlushMode = original.queryFlushMode;
 		this.timeout = original.timeout;
 		this.comment = original.comment;
 		this.hints = original.hints;
@@ -54,27 +54,31 @@ public abstract class AbstractQueryMemento<R>
 	}
 
 	@Override
-	@Nullable
+	@Nonnull
 	public String getName() {
 		return name;
 	}
 
+	@Nonnull
 	@Override
 	public String getRegistrationName() {
 		return name;
 	}
 
 	@Override
-	public FlushMode getFlushMode() {
-		return flushMode;
+	@Nonnull
+	public QueryFlushMode getQueryFlushMode() {
+		return queryFlushMode;
 	}
 
+	@Nullable
 	@Override
 	public Timeout getTimeout() {
 		return timeout;
 	}
 
 	@Override
+	@Nullable
 	public String getComment() {
 		return comment;
 	}

@@ -4,10 +4,12 @@
  */
 package org.hibernate.sql.exec.spi;
 
+import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
 import jakarta.persistence.CacheRetrieveMode;
 import jakarta.persistence.CacheStoreMode;
+import jakarta.persistence.QueryFlushMode;
 import jakarta.persistence.Timeout;
-import org.hibernate.FlushMode;
 import org.hibernate.Incubating;
 import org.hibernate.LockOptions;
 import org.hibernate.ScrollMode;
@@ -194,7 +196,7 @@ public interface JdbcSelectExecutor {
 		class ScrollableExecutionContext extends BaseExecutionContext implements QueryOptions {
 
 			private final Timeout timeout;
-			private final FlushMode flushMode;
+			private final QueryFlushMode queryFlushMode;
 			private final Boolean readOnly;
 			private final AppliedGraph appliedGraph;
 			private final TupleTransformer<?> tupleTransformer;
@@ -217,27 +219,27 @@ public interface JdbcSelectExecutor {
 			private final ExecutionContext context;
 
 			public ScrollableExecutionContext(
-					Timeout timeout,
-					FlushMode flushMode,
-					Boolean readOnly,
+					@Nullable Timeout timeout,
+					@Nonnull QueryFlushMode queryFlushMode,
+					@Nullable Boolean readOnly,
 					AppliedGraph appliedGraph,
-					TupleTransformer<?> tupleTransformer,
-					ResultListTransformer<?> resultListTransformer,
-					Boolean resultCachingEnabled,
+					@Nullable TupleTransformer<?> tupleTransformer,
+					@Nullable ResultListTransformer<?> resultListTransformer,
+					@Nullable Boolean resultCachingEnabled,
 					CacheRetrieveMode cacheRetrieveMode,
 					CacheStoreMode cacheStoreMode,
-					String resultCacheRegionName,
+					@Nullable String resultCacheRegionName,
 					LockOptions lockOptions,
 					String comment,
 					List<String> databaseHints,
-					Integer fetchSize,
+					@Nullable Integer fetchSize,
 					Limit limit,
-					Boolean limitInMemoryEnabled,
+					@Nullable Boolean limitInMemoryEnabled,
 					Limit originalLimit,
-					ExecutionContext context) {
+					@Nonnull ExecutionContext context) {
 				super( context.getSession() );
 				this.timeout = timeout;
-				this.flushMode = flushMode;
+				this.queryFlushMode = queryFlushMode;
 				this.readOnly = readOnly;
 				this.appliedGraph = appliedGraph;
 				this.tupleTransformer = tupleTransformer;
@@ -262,96 +264,115 @@ public interface JdbcSelectExecutor {
 			}
 
 			@Override
+			@Nonnull
 			public QueryOptions getQueryOptions() {
 				return this;
 			}
 
 			@Override
+			@Nullable
 			public Timeout getTimeout() {
 				return timeout;
 			}
 
 			@Override
-			public FlushMode getFlushMode() {
-				return flushMode;
+			@Nonnull
+			public QueryFlushMode getQueryFlushMode() {
+				return queryFlushMode;
 			}
 
 			@Override
+			@Nullable
 			public Boolean isReadOnly() {
 				return readOnly;
 			}
 
 			@Override
+			@Nullable
 			public AppliedGraph getAppliedGraph() {
 				return appliedGraph;
 			}
 
 			@Override
+			@Nullable
 			public TupleTransformer<?> getTupleTransformer() {
 				return tupleTransformer;
 			}
 
 			@Override
+			@Nullable
 			public ResultListTransformer<?> getResultListTransformer() {
 				return resultListTransformer;
 			}
 
 			@Override
+			@Nullable
 			public Boolean isResultCachingEnabled() {
 				return resultCachingEnabled;
 			}
 
 			@Override
+			@Nullable
 			public Boolean getQueryPlanCachingEnabled() {
 				return null;
 			}
 
 			@Override
+			@Nullable
 			public CacheRetrieveMode getCacheRetrieveMode() {
 				return cacheRetrieveMode;
 			}
 
 			@Override
+			@Nullable
 			public CacheStoreMode getCacheStoreMode() {
 				return cacheStoreMode;
 			}
 
 			@Override
+			@Nullable
 			public String getResultCacheRegionName() {
 				return resultCacheRegionName;
 			}
 
 			@Override
+			@Nonnull
 			public LockOptions getLockOptions() {
 				return lockOptions;
 			}
 
 			@Override
+			@Nullable
 			public String getComment() {
 				return comment;
 			}
 
 			@Override
+			@Nonnull
 			public List<String> getDatabaseHints() {
 				return databaseHints;
 			}
 
 			@Override
+			@Nullable
 			public Integer getFetchSize() {
 				return fetchSize;
 			}
 
 			@Override
+			@Nonnull
 			public Limit getLimit() {
 				return limit;
 			}
 
 			@Override
+			@Nullable
 			public Boolean isLimitInMemoryEnabled() {
 				return limitInMemoryEnabled;
 			}
 
 			@Override
+			@Nonnull
 			public Limit peekOriginalLimit() {
 				return originalLimit;
 			}
@@ -372,23 +393,26 @@ public interface JdbcSelectExecutor {
 			}
 
 			@Override
+			@Nullable
 			public Set<String> getEnabledFetchProfiles() {
 				return null;
 			}
 
 			@Override
+			@Nullable
 			public Set<String> getDisabledFetchProfiles() {
 				return null;
 			}
 		}
 
-		final QueryOptions options = context.getQueryOptions();
+		final var options = context.getQueryOptions();
+		final Boolean optionsReadOnly = options.isReadOnly();
 		return new ScrollableExecutionContext(
 				options.getTimeout(),
-				options.getFlushMode(),
-				options.isReadOnly() == null
-					? context.getSession().getPersistenceContext().isDefaultReadOnly()
-					: options.isReadOnly(),
+				options.getQueryFlushMode(),
+				optionsReadOnly == null
+						? context.getSession().getPersistenceContext().isDefaultReadOnly()
+						: optionsReadOnly,
 				options.getAppliedGraph(),
 				options.getTupleTransformer(),
 				options.getResultListTransformer(),

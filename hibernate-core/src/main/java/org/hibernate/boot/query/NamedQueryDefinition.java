@@ -4,9 +4,10 @@
  */
 package org.hibernate.boot.query;
 
+import jakarta.annotation.Nonnull;
+import jakarta.persistence.QueryFlushMode;
 import jakarta.persistence.Timeout;
 import jakarta.annotation.Nullable;
-import org.hibernate.FlushMode;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.query.named.spi.NamedQueryMemento;
 import org.hibernate.query.spi.JpaReference;
@@ -32,19 +33,25 @@ public interface NamedQueryDefinition<T> extends JpaReference {
 	/**
 	 * The name under which the query is to be registered.
 	 */
+	@Nonnull
 	String getRegistrationName();
 
+	@Nonnull
 	@Override
 	default String getName() {
 		return getRegistrationName();
 	}
 
-	FlushMode getQueryFlushMode();
+	@Nonnull
+	QueryFlushMode getQueryFlushMode();
 
+	@Nullable
 	Timeout getTimeout();
 
+	@Nullable
 	String getComment();
 
+	@Nonnull
 	@Override
 	Map<String, Object> getHints();
 
@@ -53,10 +60,12 @@ public interface NamedQueryDefinition<T> extends JpaReference {
 	 * usually a class or package name. Null for named queries declared
 	 * in XML.
 	 */
-	@Nullable String getLocation();
+	@Nullable
+	String getLocation();
 
 	/**
 	 * Resolve the mapping definition into its run-time memento form.
 	 */
-	NamedQueryMemento<T> resolve(SessionFactoryImplementor factory);
+	@Nonnull
+	NamedQueryMemento<T> resolve(@Nonnull SessionFactoryImplementor factory);
 }

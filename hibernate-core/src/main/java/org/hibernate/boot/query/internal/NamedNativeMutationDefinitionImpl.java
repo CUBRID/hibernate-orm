@@ -4,8 +4,11 @@
  */
 package org.hibernate.boot.query.internal;
 
+import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
+import jakarta.persistence.NamedNativeStatement;
+import jakarta.persistence.QueryFlushMode;
 import jakarta.persistence.Timeout;
-import org.hibernate.FlushMode;
 import org.hibernate.boot.query.NamedMutationDefinition;
 import org.hibernate.boot.query.NamedNativeQueryDefinition;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
@@ -19,7 +22,7 @@ import java.util.Set;
 
 /// Boot-time model of a named native mutation query.
 ///
-/// @see jakarta.persistence.NamedNativeStatement
+/// @see NamedNativeStatement
 ///
 /// @author Steve Ebersole
 public class NamedNativeMutationDefinitionImpl<T>
@@ -29,41 +32,51 @@ public class NamedNativeMutationDefinitionImpl<T>
 	private final Set<String> querySpaces;
 
 	public NamedNativeMutationDefinitionImpl(
-			String name, String location,
-			String sqlString, Set<String> querySpaces,
-			FlushMode flushMode, Timeout timeout, String comment, Map<String, Object> hints) {
-		super( name, location, flushMode, timeout, comment, hints );
+			@Nonnull String name,
+			@Nullable String location,
+			@Nonnull String sqlString,
+			@Nonnull Set<String> querySpaces,
+			@Nullable QueryFlushMode queryFlushMode,
+			@Nullable Timeout timeout,
+			@Nullable String comment,
+			@Nonnull Map<String, Object> hints) {
+		super( name, location, queryFlushMode, timeout, comment, hints );
 		this.sqlString = sqlString;
 		this.querySpaces = querySpaces;
 	}
 
+	@Nonnull
 	@Override
 	public String getSqlQueryString() {
 		return sqlString;
 	}
 
+	@Nullable
 	@Override
 	public String getResultSetMappingName() {
 		return null;
 	}
 
+	@Nonnull
 	@Override
 	public String getStatementString() {
 		return sqlString;
 	}
 
+	@Nullable
 	@Override
 	public Set<String> getQuerySpaces() {
 		return querySpaces;
 	}
 
+	@Nonnull
 	@Override
-	public NamedNativeQueryMemento<T> resolve(SessionFactoryImplementor factory) {
+	public NamedNativeQueryMemento<T> resolve(@Nonnull SessionFactoryImplementor factory) {
 		return new NativeMutationMementoImpl<>(
 				name,
 				sqlString,
 				null,
-				flushMode,
+				queryFlushMode,
 				timeout,
 				comment,
 				hints,
@@ -71,17 +84,20 @@ public class NamedNativeMutationDefinitionImpl<T>
 		);
 	}
 
-	/// Build a definition from JPA's [jakarta.persistence.NamedNativeStatement] annotation.
+	/// Build a definition from JPA's [NamedNativeStatement] annotation.
 	///
 	/// @param annotation The annotation.
 	/// @param target Where the annotation was found.
-	public static NamedNativeMutationDefinitionImpl<?> from(jakarta.persistence.NamedNativeStatement annotation, AnnotationTarget target) {
+	@Nonnull
+	public static NamedNativeMutationDefinitionImpl<?> from(
+			@Nonnull NamedNativeStatement annotation,
+			@Nullable AnnotationTarget target) {
 		return new NamedNativeMutationDefinitionImpl<>(
 				annotation.name(),
 				target == null ? null : target.getName(),
 				annotation.statement(),
 				new HashSet<>(),
-				null,
+				QueryFlushMode.DEFAULT,
 				null,
 				null,
 				Helper.extractHints( annotation.hints() )

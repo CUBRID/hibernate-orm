@@ -7,9 +7,11 @@ package org.hibernate.query.spi;
 import jakarta.persistence.CacheRetrieveMode;
 import jakarta.persistence.CacheStoreMode;
 
+import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
+import jakarta.persistence.QueryFlushMode;
 import jakarta.persistence.Timeout;
 import org.hibernate.CacheMode;
-import org.hibernate.FlushMode;
 import org.hibernate.graph.GraphSemantic;
 import org.hibernate.graph.spi.RootGraphImplementor;
 import org.hibernate.query.ResultListTransformer;
@@ -26,24 +28,24 @@ import static org.hibernate.query.internal.QueryLogging.QUERY_LOGGER;
  */
 public interface MutableQueryOptions extends QueryOptions {
 	/**
-	 * Corollary to {@link #getFlushMode()}
+	 * Corollary to {@link #getQueryFlushMode()}
 	 */
-	void setFlushMode(FlushMode flushMode);
+	void setQueryFlushMode(@Nonnull QueryFlushMode queryFlushMode);
 
 	/**
 	 * Corollary to {@link #getCacheRetrieveMode}
 	 */
-	void setCacheRetrieveMode(CacheRetrieveMode retrieveMode);
+	void setCacheRetrieveMode(@Nullable CacheRetrieveMode retrieveMode);
 
 	/**
 	 * Corollary to {@link #getCacheStoreMode()}
 	 */
-	void setCacheStoreMode(CacheStoreMode storeMode);
+	void setCacheStoreMode(@Nullable CacheStoreMode storeMode);
 
 	/**
 	 * Corollary to {@link #getCacheMode()}
 	 */
-	default void setCacheMode(CacheMode cacheMode) {
+	default void setCacheMode(@Nullable CacheMode cacheMode) {
 		if ( cacheMode == null ) {
 			QUERY_LOGGER.debug( "Null CacheMode passed to #setCacheMode; falling back to 'NORMAL'" );
 			cacheMode = CacheMode.NORMAL;
@@ -61,12 +63,12 @@ public interface MutableQueryOptions extends QueryOptions {
 	/**
 	 * Corollary to {@link #getResultCacheRegionName()}
 	 */
-	void setResultCacheRegionName(String cacheRegion);
+	void setResultCacheRegionName(@Nullable String cacheRegion);
 
 	/**
 	 * Corollary to {@link #getQueryPlanCachingEnabled()}
 	 */
-	void setQueryPlanCachingEnabled(Boolean queryPlanCachingEnabled);
+	void setQueryPlanCachingEnabled(@Nullable Boolean queryPlanCachingEnabled);
 
 	/**
 	 * Corollary to {@link #isLimitInMemoryEnabled()}
@@ -76,7 +78,7 @@ public interface MutableQueryOptions extends QueryOptions {
 	/**
 	 * Corollary to {@link #getTimeout()}
 	 */
-	void setTimeout(Timeout timeout);
+	void setTimeout(@Nullable Timeout timeout);
 
 	/**
 	 * Corollary to {@link #getTimeout()}
@@ -96,22 +98,23 @@ public interface MutableQueryOptions extends QueryOptions {
 	/**
 	 * Corollary to {@link #getComment()}
 	 */
-	void setComment(String comment);
+	void setComment(@Nullable String comment);
 
 	/**
 	 * Corollary to {@link #getDatabaseHints()}
 	 */
-	void addDatabaseHint(String hint);
+	void addDatabaseHint(@Nonnull String hint);
 
-	void setTupleTransformer(TupleTransformer<?> transformer);
+	void setTupleTransformer(@Nonnull TupleTransformer<?> transformer);
 
-	void setResultListTransformer(ResultListTransformer<?> transformer);
+	void setResultListTransformer(@Nonnull ResultListTransformer<?> transformer);
 
-	void applyGraph(RootGraphImplementor<?> rootGraph, GraphSemantic graphSemantic);
+	void applyGraph(@Nonnull RootGraphImplementor<?> rootGraph, @Nonnull GraphSemantic graphSemantic);
 
-	void enableFetchProfile(String profileName);
+	void enableFetchProfile(@Nonnull String profileName);
 
-	void disableFetchProfile(String profileName);
+	void disableFetchProfile(@Nonnull String profileName);
 
+	@Nonnull
 	MutableQueryOptions makeCopy();
 }

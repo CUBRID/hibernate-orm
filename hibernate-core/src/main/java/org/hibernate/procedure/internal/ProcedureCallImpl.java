@@ -992,7 +992,7 @@ public class ProcedureCallImpl<R>
 				queryOptions.isResultCachingEnabled(),
 				queryOptions.getResultCacheRegionName(),
 				queryOptions.getCacheMode(),
-				queryOptions.getFlushMode(),
+				queryOptions.getQueryFlushMode(),
 				queryOptions.isReadOnly(),
 				queryOptions.getTimeout(),
 				queryOptions.getFetchSize(),
