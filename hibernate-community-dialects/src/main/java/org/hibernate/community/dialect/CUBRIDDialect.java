@@ -4,8 +4,11 @@
  */
 package org.hibernate.community.dialect;
 
+import java.sql.DatabaseMetaData;
+import java.sql.SQLException;
 import java.sql.Types;
 
+import org.hibernate.ScrollMode;
 import org.hibernate.boot.model.FunctionContributions;
 import org.hibernate.boot.model.TypeContributions;
 import org.hibernate.community.dialect.identity.CUBRIDIdentityColumnSupport;
@@ -13,6 +16,7 @@ import org.hibernate.community.dialect.sequence.CUBRIDSequenceSupport;
 import org.hibernate.community.dialect.sequence.SequenceInformationExtractorCUBRIDDatabaseImpl;
 import org.hibernate.dialect.DatabaseVersion;
 import org.hibernate.dialect.Dialect;
+import org.hibernate.dialect.DmlTargetColumnQualifierSupport;
 import org.hibernate.dialect.NullOrdering;
 import org.hibernate.dialect.OracleDialect;
 import org.hibernate.dialect.TimeZoneSupport;
@@ -27,10 +31,18 @@ import org.hibernate.dialect.lock.spi.OuterJoinLockingType;
 import org.hibernate.dialect.pagination.LimitHandler;
 import org.hibernate.dialect.pagination.LimitLimitHandler;
 import org.hibernate.dialect.sequence.SequenceSupport;
-import org.hibernate.engine.jdbc.dialect.spi.DialectResolutionInfo;
-import org.hibernate.engine.spi.SessionFactoryImplementor;
-import org.hibernate.query.SemanticException;
 import org.hibernate.dialect.type.IntervalType;
+import org.hibernate.engine.jdbc.dialect.spi.DialectResolutionInfo;
+import org.hibernate.engine.jdbc.env.spi.IdentifierCaseStrategy;
+import org.hibernate.engine.jdbc.env.spi.IdentifierHelper;
+import org.hibernate.engine.jdbc.env.spi.IdentifierHelperBuilder;
+import org.hibernate.engine.jdbc.env.spi.NameQualifierSupport;
+import org.hibernate.engine.spi.SessionFactoryImplementor;
+import org.hibernate.exception.ConstraintViolationException;
+import org.hibernate.exception.spi.SQLExceptionConversionDelegate;
+import org.hibernate.exception.spi.TemplatedViolatedConstraintNameExtractor;
+import org.hibernate.exception.spi.ViolatedConstraintNameExtractor;
+import org.hibernate.query.SemanticException;
 import org.hibernate.query.common.TemporalUnit;
 import org.hibernate.service.ServiceRegistry;
 import org.hibernate.sql.ast.SqlAstTranslator;
@@ -40,6 +52,8 @@ import org.hibernate.sql.ast.spi.StandardSqlAstTranslatorFactory;
 import org.hibernate.sql.ast.tree.Statement;
 import org.hibernate.sql.exec.spi.JdbcOperation;
 import org.hibernate.tool.schema.extract.spi.SequenceInformationExtractor;
+import org.hibernate.type.descriptor.jdbc.BlobJdbcType;
+import org.hibernate.type.descriptor.jdbc.ClobJdbcType;
 import org.hibernate.type.descriptor.jdbc.JdbcType;
 import org.hibernate.type.descriptor.jdbc.spi.JdbcTypeRegistry;
 import org.hibernate.type.descriptor.sql.internal.BinaryFloatDdlType;
@@ -57,6 +71,7 @@ import static org.hibernate.query.common.TemporalUnit.SECOND;
 import static org.hibernate.type.SqlTypes.BINARY;
 import static org.hibernate.type.SqlTypes.BLOB;
 import static org.hibernate.type.SqlTypes.BOOLEAN;
+import static org.hibernate.type.SqlTypes.TIME;
 import static org.hibernate.type.SqlTypes.TIMESTAMP;
 import static org.hibernate.type.SqlTypes.TIMESTAMP_WITH_TIMEZONE;
 import static org.hibernate.type.SqlTypes.TIME_WITH_TIMEZONE;
@@ -91,8 +106,12 @@ public class CUBRIDDialect extends Dialect {
 	@Override
 	protected String columnType(int sqlTypeCode) {
 		return switch ( sqlTypeCode ) {
-			case BOOLEAN -> "bit";
+			//CUBRID's 'bit' is a fixed-length bit string that rejects boolean host
+			//variables, so map boolean to a numeric type instead
+			case BOOLEAN -> "smallint";
 			case TINYINT -> "smallint";
+			//CUBRID's 'time' does not accept an explicit precision (e.g. time(0))
+			case TIME -> "time";
 			//'timestamp' has a very limited range
 			//'datetime' does not support explicit precision
 			//(always 3, millisecond precision)
@@ -158,6 +177,10 @@ public class CUBRIDDialect extends Dialect {
 		registerKeyword( "ATTRIBUTE" );
 		registerKeyword( "STRING" );
 		registerKeyword( "SEARCH" );
+		registerKeyword( "POSITION" );
+		registerKeyword( "NAMES" );
+		registerKeyword( "LAST" );
+		registerKeyword( "DEPTH" );
 	}
 
 	public CUBRIDDialect(DialectResolutionInfo info) {
@@ -201,7 +224,8 @@ public class CUBRIDDialect extends Dialect {
 
 	@Override
 	public int getPreferredSqlTypeCodeForBoolean() {
-		return Types.BIT;
+		//CUBRID has no native boolean; store as smallint
+		return Types.SMALLINT;
 	}
 
 	//not used for anything right now, but it
@@ -214,6 +238,128 @@ public class CUBRIDDialect extends Dialect {
 	@Override
 	public int getFloatPrecision() {
 		return 21; // -> 7 decimal digits
+	}
+
+	@Override
+	public void contributeTypes(TypeContributions typeContributions, ServiceRegistry serviceRegistry) {
+		super.contributeTypes( typeContributions, serviceRegistry );
+		final JdbcTypeRegistry jdbcTypeRegistry = typeContributions.getTypeConfiguration().getJdbcTypeRegistry();
+		//the CUBRID JDBC driver has no stream-based LOB binding, so materialize
+		//BLOB/CLOB to byte[]/String (setBytes/setString) instead
+		jdbcTypeRegistry.addDescriptor( Types.BLOB, BlobJdbcType.MATERIALIZED );
+		jdbcTypeRegistry.addDescriptor( Types.CLOB, ClobJdbcType.MATERIALIZED );
+		jdbcTypeRegistry.addDescriptor( Types.NCLOB, ClobJdbcType.MATERIALIZED );
+	}
+
+	@Override
+	public boolean useInputStreamToInsertBlob() {
+		//the CUBRID JDBC driver has no stream-based LOB binding
+		return false;
+	}
+
+	@Override
+	public boolean useConnectionToCreateLob() {
+		//the CUBRID JDBC driver does not support Connection.createBlob()/createClob()
+		return false;
+	}
+
+	@Override
+	public boolean getDefaultNonContextualLobCreation() {
+		return true;
+	}
+
+	@Override
+	public SQLExceptionConversionDelegate buildSQLExceptionConversionDelegate() {
+		//CUBRID has no stable JDBC error codes for constraint violations, so match on the message
+		return (sqlException, message, sql) -> {
+			final String errorMessage = sqlException.getMessage();
+			if ( errorMessage != null ) {
+				if ( errorMessage.contains( "unique constraint" ) ) {
+					return new ConstraintViolationException( message, sqlException, sql,
+							ConstraintViolationException.ConstraintKind.UNIQUE,
+							getViolatedConstraintNameExtractor().extractConstraintName( sqlException ) );
+				}
+				if ( errorMessage.contains( "foreign key" ) ) {
+					return new ConstraintViolationException( message, sqlException, sql,
+							ConstraintViolationException.ConstraintKind.FOREIGN_KEY,
+							getViolatedConstraintNameExtractor().extractConstraintName( sqlException ) );
+				}
+				if ( errorMessage.contains( "NOT NULL constraint" ) ) {
+					return new ConstraintViolationException( message, sqlException, sql,
+							ConstraintViolationException.ConstraintKind.NOT_NULL,
+							getViolatedConstraintNameExtractor().extractConstraintName( sqlException ) );
+				}
+			}
+			return null;
+		};
+	}
+
+	@Override
+	public ViolatedConstraintNameExtractor getViolatedConstraintNameExtractor() {
+		return EXTRACTOR;
+	}
+
+	private static final ViolatedConstraintNameExtractor EXTRACTOR =
+			new TemplatedViolatedConstraintNameExtractor( sqle -> {
+				final String message = sqle.getMessage();
+				if ( message == null ) {
+					return null;
+				}
+				if ( message.contains( "unique constraint" ) ) {
+					return TemplatedViolatedConstraintNameExtractor.extractUsingTemplate( "INDEX ", "(", message );
+				}
+				if ( message.contains( "foreign key '" ) ) {
+					return TemplatedViolatedConstraintNameExtractor.extractUsingTemplate( "foreign key '", "'", message );
+				}
+				return null;
+			} );
+
+	@Override
+	public ScrollMode defaultScrollMode() {
+		//the CUBRID JDBC driver has no scroll-insensitive cursor; only forward-only is supported
+		return ScrollMode.FORWARD_ONLY;
+	}
+
+	@Override
+	public boolean supportsJoinsInDelete() {
+		//CUBRID supports multi-table/joined DELETE (e.g. DELETE c FROM t c JOIN ... )
+		return true;
+	}
+
+	@Override
+	public boolean supportsFromClauseInUpdate() {
+		//CUBRID supports multi-table/joined UPDATE (e.g. UPDATE t c JOIN ... SET ... )
+		return true;
+	}
+
+	@Override
+	public DmlTargetColumnQualifierSupport getDmlTargetColumnQualifierSupport() {
+		//joined DELETE/UPDATE require the table alias to qualify columns
+		return DmlTargetColumnQualifierSupport.TABLE_ALIAS;
+	}
+
+	@Override
+	public boolean supportsLateral() {
+		//CUBRID supports correlated derived tables in the from clause (implicit lateral);
+		//CUBRIDSqlAstTranslator renders them without the (unsupported) LATERAL keyword
+		return true;
+	}
+
+	@Override
+	public NameQualifierSupport getNameQualifierSupport() {
+		return getVersion().isSameOrAfter( 11, 2 ) ? NameQualifierSupport.SCHEMA : NameQualifierSupport.NONE;
+	}
+
+	@Override
+	public IdentifierHelper buildIdentifierHelper(IdentifierHelperBuilder builder, DatabaseMetaData metadata)
+			throws SQLException {
+		//CUBRID folds ALL identifiers (quoted or not) to lower case, but the JDBC driver only
+		//reports this for unquoted identifiers (storesLowerCaseQuotedIdentifiers() is false), so
+		//schema validation fails to match a quoted/mixed-case mapped name against the lower-case
+		//catalog. Force lower-case folding for both to align with the actual engine behaviour.
+		builder.setUnquotedCaseStrategy( IdentifierCaseStrategy.LOWER );
+		builder.setQuotedCaseStrategy( IdentifierCaseStrategy.LOWER );
+		return super.buildIdentifierHelper( builder, metadata );
 	}
 
 	@Override
@@ -272,7 +418,11 @@ public class CUBRIDDialect extends Dialect {
 		functionFactory.addMonths();
 		functionFactory.monthsBetween();
 		functionFactory.rownumInstOrderbyGroupbyNum();
-		functionFactory.regexpLike();
+		//CUBRID's regexp operator is MySQL-compatible (case-insensitive by default,
+		//"regexp binary" for case-sensitive) and is a logical predicate, so render
+		//regexp_like via the operator instead of a non-logical regexp_like() function
+		//call, which CUBRID rejects in boolean contexts on 11.2+
+		functionFactory.regexpLike_regexp();
 	}
 
 	@Override
@@ -404,11 +554,6 @@ public class CUBRIDDialect extends Dialect {
 	}
 
 	@Override
-	public boolean supportsIsTrue() {
-		return true;
-	}
-
-	@Override
 	public boolean supportsValuesList() {
 		return true;
 	}
@@ -514,7 +659,9 @@ public class CUBRIDDialect extends Dialect {
 
 	@Override
 	public TimeZoneSupport getTimeZoneSupport() {
-		return TimeZoneSupport.NATIVE;
+		//the CUBRID JDBC driver has no java.time support, so route temporal binding
+		//through java.sql.Timestamp by normalizing to the JDBC timezone
+		return TimeZoneSupport.NORMALIZE;
 	}
 
 	@Override
