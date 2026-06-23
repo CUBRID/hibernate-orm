@@ -409,7 +409,7 @@ public class CollectionFetchPaginationQueryTransformer implements QueryTransform
 			@Override
 			public void accept(int idx, SelectableMapping selectable) {
 				if ( primaryTableExpr.equals( selectable.getContainingTableExpression() ) ) {
-					final String columnName = selectable.getSelectionExpression();
+					final String columnName = selectable.getSelectableName();
 					if ( seen.add( columnName ) ) {
 						sqlSelections.add(
 								new ResolvedSqlSelection(

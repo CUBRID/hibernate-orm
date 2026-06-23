@@ -195,27 +195,40 @@ import static org.hibernate.query.sqm.internal.SqmUtil.verifyIsSelectStatement;
 abstract class AbstractSharedSessionContract
 		implements SharedSessionContractImplementor, ExtensionIntegrationContext {
 
+	@Nonnull
 	private transient SessionFactoryImpl factory;
+	@Nonnull
 	private transient SessionFactoryOptions factoryOptions;
+	@Nonnull
 	private transient JdbcServices jdbcServices;
 
 	// Defaults to null, meaning the properties
 	// are the default properties of the factory.
+	@Nullable
 	private Map<String, Object> properties;
 
+	@Nullable
 	private UUID sessionIdentifier;
+	@Nullable
 	private Object sessionToken;
 
+	@Nullable
 	private transient JdbcConnectionAccess jdbcConnectionAccess;
+	@Nonnull
 	private transient JdbcSessionContext jdbcSessionContext;
+	@Nonnull
 	private transient JdbcCoordinator jdbcCoordinator;
 
+	@Nullable
 	private transient Transaction currentHibernateTransaction;
+	@Nonnull
 	private transient TransactionCoordinator transactionCoordinator;
+	@Nonnull
 	private transient CacheTransactionSynchronization cacheTransactionSynchronization;
 
 	private final boolean autoJoinTransactions;
 	private final boolean isTransactionCoordinatorShared;
+	@Nonnull
 	private final PhysicalConnectionHandlingMode connectionHandlingMode;
 
 	@Nonnull
@@ -225,13 +238,18 @@ abstract class AbstractSharedSessionContract
 	private final boolean readOnly;
 	private final TimeZone jdbcTimeZone;
 
+	@Nullable
 	private transient ChangesetIdentifierSupplier<?> changesetIdSupplier;
 
 	// mutable state
+	@Nonnull
 	private CacheMode cacheMode;
+	@Nullable
 	private Integer jdbcBatchSize;
 
+	@Nullable
 	private transient Object currentChangesetId;
+	@Nullable
 	private transient Object currentChangesetContext;
 
 	private boolean criteriaCopyTreeEnabled;
@@ -246,13 +264,18 @@ abstract class AbstractSharedSessionContract
 	private transient int sessionUseProhibitedDepth;
 
 	// transient & non-final for serialization purposes
+	@Nonnull
 	private transient SessionEventListenerManager sessionEventsManager;
+	@Nonnull
 	private transient EntityNameResolver entityNameResolver;
 
 	//Lazily initialized
+	@Nullable
 	private transient ExceptionConverter exceptionConverter;
+	@Nullable
 	private transient SessionAssociationMarkers sessionAssociationMarkers;
 
+	@Nonnull
 	private transient final Map<Class<?>, Object> extensions;
 
 	AbstractSharedSessionContract(SessionFactoryImpl factory, SessionCreationOptions options) {
@@ -288,21 +311,26 @@ abstract class AbstractSharedSessionContract
 			if ( options.getConnection() != null ) {
 				throw new SessionException( "Cannot simultaneously share transaction context and specify connection" );
 			}
-			transactionCoordinator = sharedOptions.getTransactionCoordinator();
-			jdbcCoordinator = sharedOptions.getJdbcCoordinator();
+
+			final var transactionCoordinator = sharedOptions.getTransactionCoordinator();
+			final var jdbcCoordinator = sharedOptions.getJdbcCoordinator();
+			assert transactionCoordinator != null;
+			assert jdbcCoordinator != null;
+			this.transactionCoordinator = transactionCoordinator;
+			this.jdbcCoordinator = jdbcCoordinator;
+
 			// todo : "wrap" the transaction to no-op commit/rollback attempts?
 			currentHibernateTransaction = sharedOptions.getTransaction();
-			connectionHandlingMode = jdbcCoordinator.getLogicalConnection().getConnectionHandlingMode();
+			connectionHandlingMode = this.jdbcCoordinator.getLogicalConnection().getConnectionHandlingMode();
 			autoJoinTransactions = false;
 			jdbcSessionContext = createJdbcSessionContext( options.getStatementObserver(), statementInspector );
 			logInconsistentOptions( sharedOptions );
-			addSharedSessionTransactionObserver( transactionCoordinator );
+			addSharedSessionTransactionObserver( this.transactionCoordinator );
 			sharedOptions.registerParentSessionObserver( new ParentSessionObserver() {
 				@Override
 				public void onParentFlush() {
 					propagateFlush();
 				}
-
 				@Override
 				public void onParentClose() {
 					propagateClose();
@@ -332,6 +360,7 @@ abstract class AbstractSharedSessionContract
 		rowLevelSecurityEnabled = isRowLevelSecurityEnabled();
 	}
 
+	@Nullable
 	private static ChangesetIdentifierSupplier<?> initializeChangesetIdSupplier(SessionFactoryImplementor factory) {
 		final var changesetCoordinator = factory.getChangesetCoordinator();
 		return changesetCoordinator.useServerTimestamp( factory.getJdbcServices().getDialect() )
@@ -776,10 +805,12 @@ abstract class AbstractSharedSessionContract
 		}
 	}
 
+	@Nonnull
 	private JdbcCoordinatorImpl createJdbcCoordinator(SessionCreationOptions options) {
 		return new JdbcCoordinatorImpl( options.getConnection(), this, getJdbcServices() );
 	}
 
+	@Nonnull
 	private JdbcSessionContextImpl createJdbcSessionContext(
 			StatementObserver statementObserver,
 			StatementInspector statementInspector) {
@@ -800,6 +831,7 @@ abstract class AbstractSharedSessionContract
 		);
 	}
 
+	@Nullable
 	private static Object getTenantId( SessionFactoryOptions factoryOptions, SessionCreationOptions options ) {
 		final Object tenantIdentifier = options.getTenantIdentifierValue();
 		if ( factoryOptions.isMultiTenancyEnabled() && tenantIdentifier == null ) {
@@ -818,6 +850,7 @@ abstract class AbstractSharedSessionContract
 		}
 	}
 
+	@Nonnull
 	private static SessionEventListenerManager createSessionEventsManager(
 			SessionFactoryOptions factoryOptions, SessionCreationOptions options) {
 		final var customListeners = options.getCustomSessionEventListeners();
@@ -873,6 +906,7 @@ abstract class AbstractSharedSessionContract
 		}
 	}
 
+	@Nullable
 	private Transaction getTransactionIfAccessible() {
 		// We do not want an exception to be thrown if the transaction
 		// is not accessible. If the transaction is not accessible,
@@ -880,10 +914,10 @@ abstract class AbstractSharedSessionContract
 		return isTransactionAccessible() ? accessTransaction() : null;
 	}
 
-	protected void addSharedSessionTransactionObserver(TransactionCoordinator transactionCoordinator) {
+	protected void addSharedSessionTransactionObserver(@Nonnull TransactionCoordinator transactionCoordinator) {
 	}
 
-	protected void removeSharedSessionTransactionObserver(TransactionCoordinator transactionCoordinator) {
+	protected void removeSharedSessionTransactionObserver(@Nonnull TransactionCoordinator transactionCoordinator) {
 		transactionCoordinator.invalidate();
 	}
 
@@ -939,6 +973,7 @@ abstract class AbstractSharedSessionContract
 		return jdbcSessionContext;
 	}
 
+	@Nonnull
 	public final EntityNameResolver getEntityNameResolver() {
 		return entityNameResolver;
 	}

@@ -8,6 +8,10 @@ import java.io.IOException;
 import java.io.ObjectOutputStream;
 import java.sql.Connection;
 
+import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
+import org.hibernate.Incubating;
+import org.hibernate.ConnectionReleaseMode;
 import org.hibernate.resource.jdbc.LogicalConnection;
 
 /**
@@ -23,9 +27,16 @@ public interface LogicalConnectionImplementor extends LogicalConnection {
 	 *
 	 * @return The connection
 	 */
+	@Nonnull
 	Connection getPhysicalConnection();
 
+	@Nonnull
 	PhysicalConnectionHandlingMode getConnectionHandlingMode();
+
+	@Incubating
+	default @Nonnull ConnectionReleaseMode resolvedConnectionReleaseMode() {
+		return getConnectionHandlingMode().getReleaseMode();
+	}
 
 	/**
 	 * Notification indicating a JDBC statement has been executed, to trigger
@@ -57,6 +68,7 @@ public interface LogicalConnectionImplementor extends LogicalConnection {
 	 * @return The connection maintained here at time of disconnect.
 	 *         {@code null} if there was no connection cached internally.
 	 */
+	@Nullable
 	Connection manualDisconnect();
 
 	/**
@@ -68,11 +80,12 @@ public interface LogicalConnectionImplementor extends LogicalConnection {
 	 *                           which to reconnect. It is an error to pass
 	 *                           a connection in the other strategies.
 	 */
-	void manualReconnect(Connection suppliedConnection);
+	void manualReconnect(@Nonnull Connection suppliedConnection);
 
 	/**
 	 * Access to the current underlying JDBC transaction.
 	 */
+	@Nonnull
 	PhysicalJdbcTransaction getPhysicalJdbcTransaction();
 
 	/**

@@ -12,6 +12,7 @@ import java.sql.SQLException;
 
 import jakarta.annotation.Nonnull;
 import jakarta.annotation.Nullable;
+import org.hibernate.ConnectionReleaseMode;
 import org.hibernate.ResourceClosedException;
 import org.hibernate.engine.jdbc.connections.spi.JdbcConnectionAccess;
 import org.hibernate.engine.jdbc.spi.SqlExceptionHelper;
@@ -23,6 +24,7 @@ import org.hibernate.resource.jdbc.spi.PhysicalConnectionHandlingMode;
 
 import static org.hibernate.ConnectionAcquisitionMode.IMMEDIATELY;
 import static org.hibernate.ConnectionReleaseMode.AFTER_STATEMENT;
+import static org.hibernate.ConnectionReleaseMode.AFTER_TRANSACTION;
 import static org.hibernate.ConnectionReleaseMode.BEFORE_TRANSACTION_COMPLETION;
 import static org.hibernate.ConnectionReleaseMode.ON_CLOSE;
 import static org.hibernate.resource.jdbc.internal.LogicalConnectionLogging.CONNECTION_LOGGER;
@@ -90,6 +92,7 @@ public class LogicalConnectionManagedImpl extends AbstractLogicalConnectionImple
 		return jdbcSessionOwner.getSqlExceptionHelper();
 	}
 
+	@Nonnull
 	private Connection acquireConnectionIfNeeded() {
 		if ( physicalConnection == null ) {
 			physicalConnection = acquire();
@@ -130,6 +133,7 @@ public class LogicalConnectionManagedImpl extends AbstractLogicalConnectionImple
 	}
 
 	@Override
+	@Nonnull
 	public Connection getPhysicalConnection() {
 		errorIfClosed();
 		return acquireConnectionIfNeeded();
@@ -138,7 +142,7 @@ public class LogicalConnectionManagedImpl extends AbstractLogicalConnectionImple
 	@Override
 	public void afterStatement() {
 		super.afterStatement();
-		if ( connectionHandlingMode.getReleaseMode() == AFTER_STATEMENT ) {
+		if ( resolvedConnectionReleaseMode() == AFTER_STATEMENT ) {
 			if ( getResourceRegistry().hasRegisteredResources() ) {
 				CONNECTION_LOGGER.skipConnectionReleaseAfterStatementDueToResources( hashCode() );
 			}
@@ -152,7 +156,7 @@ public class LogicalConnectionManagedImpl extends AbstractLogicalConnectionImple
 	@Override
 	public void beforeTransactionCompletion() {
 		super.beforeTransactionCompletion();
-		if ( connectionHandlingMode.getReleaseMode() == BEFORE_TRANSACTION_COMPLETION ) {
+		if ( resolvedConnectionReleaseMode() == BEFORE_TRANSACTION_COMPLETION ) {
 			CONNECTION_LOGGER.initiatingConnectionReleaseBeforeTransactionCompletion( hashCode() );
 			releaseConnectionIfNeeded();
 		}
@@ -161,7 +165,7 @@ public class LogicalConnectionManagedImpl extends AbstractLogicalConnectionImple
 	@Override
 	public void afterTransaction() {
 		super.afterTransaction();
-		if ( connectionHandlingMode.getReleaseMode() != ON_CLOSE ) {
+		if ( resolvedConnectionReleaseMode() != ON_CLOSE ) {
 			// NOTE: we check for !ON_CLOSE here (rather than AFTER_TRANSACTION) to also catch:
 			// - AFTER_STATEMENT cases that were circumvented due to held resources
 			// - BEFORE_TRANSACTION_COMPLETION cases that were circumvented because a rollback occurred
@@ -182,7 +186,7 @@ public class LogicalConnectionManagedImpl extends AbstractLogicalConnectionImple
 	}
 
 	@Override
-	public void manualReconnect(Connection suppliedConnection) {
+	public void manualReconnect(@Nonnull Connection suppliedConnection) {
 		if ( closed ) {
 			throw new ResourceClosedException( "Logical connection is closed" );
 		}
@@ -317,5 +321,18 @@ public class LogicalConnectionManagedImpl extends AbstractLogicalConnectionImple
 	@Nonnull
 	public ResourceRegistry getResourceRegistry() {
 		return resourceRegistry;
+	}
+
+	public @Nonnull ConnectionReleaseMode resolvedConnectionReleaseMode() {
+		final var releaseMode = connectionHandlingMode.getReleaseMode();
+		if ( releaseMode == AFTER_TRANSACTION
+			&& !jdbcSessionOwner.getTransactionCoordinator().isTransactionActive() ) {
+			// means we've autocommitted and the transaction ended after the statement
+			// hence we should treat it as if "after statement":
+			return AFTER_STATEMENT;
+		}
+		else {
+			return releaseMode;
+		}
 	}
 }
