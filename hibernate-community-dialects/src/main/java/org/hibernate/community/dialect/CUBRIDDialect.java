@@ -7,16 +7,23 @@ package org.hibernate.community.dialect;
 import java.sql.DatabaseMetaData;
 import java.sql.SQLException;
 import java.sql.Types;
+import java.time.ZonedDateTime;
+import java.time.temporal.TemporalAccessor;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.TimeZone;
 
 import org.hibernate.ScrollMode;
 import org.hibernate.boot.model.FunctionContributions;
 import org.hibernate.boot.model.TypeContributions;
+import org.hibernate.community.dialect.function.CUBRIDExtractFunction;
 import org.hibernate.community.dialect.identity.CUBRIDIdentityColumnSupport;
 import org.hibernate.community.dialect.sequence.CUBRIDSequenceSupport;
 import org.hibernate.community.dialect.sequence.SequenceInformationExtractorCUBRIDDatabaseImpl;
 import org.hibernate.dialect.DatabaseVersion;
 import org.hibernate.dialect.Dialect;
 import org.hibernate.dialect.DmlTargetColumnQualifierSupport;
+import org.hibernate.dialect.NationalizationSupport;
 import org.hibernate.dialect.NullOrdering;
 import org.hibernate.dialect.OracleDialect;
 import org.hibernate.dialect.TimeZoneSupport;
@@ -44,6 +51,7 @@ import org.hibernate.exception.spi.TemplatedViolatedConstraintNameExtractor;
 import org.hibernate.exception.spi.ViolatedConstraintNameExtractor;
 import org.hibernate.query.SemanticException;
 import org.hibernate.query.common.TemporalUnit;
+import org.hibernate.query.sqm.function.SqmFunctionRegistry;
 import org.hibernate.service.ServiceRegistry;
 import org.hibernate.sql.ast.SqlAstTranslator;
 import org.hibernate.sql.ast.SqlAstTranslatorFactory;
@@ -52,6 +60,7 @@ import org.hibernate.sql.ast.spi.StandardSqlAstTranslatorFactory;
 import org.hibernate.sql.ast.tree.Statement;
 import org.hibernate.sql.exec.spi.JdbcOperation;
 import org.hibernate.tool.schema.extract.spi.SequenceInformationExtractor;
+import org.hibernate.type.StandardBasicTypes;
 import org.hibernate.type.descriptor.jdbc.BlobJdbcType;
 import org.hibernate.type.descriptor.jdbc.ClobJdbcType;
 import org.hibernate.type.descriptor.jdbc.JdbcType;
@@ -60,6 +69,7 @@ import org.hibernate.type.descriptor.sql.internal.BinaryFloatDdlType;
 import org.hibernate.type.descriptor.sql.internal.CapacityDependentDdlType;
 import org.hibernate.type.descriptor.sql.internal.DdlTypeImpl;
 import org.hibernate.type.descriptor.sql.spi.DdlTypeRegistry;
+import org.hibernate.type.spi.TypeConfiguration;
 
 import jakarta.persistence.TemporalType;
 
@@ -68,6 +78,10 @@ import static org.hibernate.query.common.TemporalUnit.MINUTE;
 import static org.hibernate.query.common.TemporalUnit.NANOSECOND;
 import static org.hibernate.query.common.TemporalUnit.NATIVE;
 import static org.hibernate.query.common.TemporalUnit.SECOND;
+import static org.hibernate.type.descriptor.DateTimeUtils.appendAsDate;
+import static org.hibernate.type.descriptor.DateTimeUtils.appendAsLocalTime;
+import static org.hibernate.type.descriptor.DateTimeUtils.appendAsTimestampWithMicros;
+import static org.hibernate.type.descriptor.DateTimeUtils.appendAsTimestampWithMillis;
 import static org.hibernate.type.SqlTypes.BINARY;
 import static org.hibernate.type.SqlTypes.BLOB;
 import static org.hibernate.type.SqlTypes.BOOLEAN;
@@ -351,6 +365,12 @@ public class CUBRIDDialect extends Dialect {
 	}
 
 	@Override
+	public NationalizationSupport getNationalizationSupport() {
+		//CUBRID has no nvarchar/nclob types; map nationalized types to the regular varchar/clob
+		return NationalizationSupport.IMPLICIT;
+	}
+
+	@Override
 	public IdentifierHelper buildIdentifierHelper(IdentifierHelperBuilder builder, DatabaseMetaData metadata)
 			throws SQLException {
 		//CUBRID folds ALL identifiers (quoted or not) to lower case, but the JDBC driver only
@@ -359,6 +379,10 @@ public class CUBRIDDialect extends Dialect {
 		//catalog. Force lower-case folding for both to align with the actual engine behaviour.
 		builder.setUnquotedCaseStrategy( IdentifierCaseStrategy.LOWER );
 		builder.setQuotedCaseStrategy( IdentifierCaseStrategy.LOWER );
+		//CUBRID rejects '$' in an unquoted identifier; Hibernate emits implicit '$'-bearing names
+		//(e.g. bytecode-enhancement / nested-class-derived column, table and sequence names), so
+		//force-quote any identifier containing '$'
+		builder.setAutoQuoteDollar( true );
 		return super.buildIdentifierHelper( builder, metadata );
 	}
 
@@ -407,7 +431,8 @@ public class CUBRIDDialect extends Dialect {
 		functionFactory.insert();
 		functionFactory.nowCurdateCurtime();
 		functionFactory.makedateMaketime();
-		functionFactory.bitandorxornot_bitAndOrXorNot();
+		//CUBRID has no bit_and/bit_or/bit_xor/bit_not SQL functions; use the &|^~ operators instead
+		functionFactory.bitandorxornot_operator();
 		functionFactory.median();
 		functionFactory.stddev();
 		functionFactory.stddevPopSamp();
@@ -423,6 +448,25 @@ public class CUBRIDDialect extends Dialect {
 		//regexp_like via the operator instead of a non-logical regexp_like() function
 		//call, which CUBRID rejects in boolean contexts on 11.2+
 		functionFactory.regexpLike_regexp();
+
+		//CUBRID supports SQL window functions (OVER); register them so the Criteria path can
+		//resolve row_number/rank/dense_rank/lag/lead/first_value/last_value/nth_value etc.
+		functionFactory.windowFunctions();
+		functionFactory.hypotheticalOrderedSetAggregates_windowEmulation();
+
+		final SqmFunctionRegistry functionRegistry = functionContributions.getFunctionRegistry();
+		final TypeConfiguration typeConfiguration = functionContributions.getTypeConfiguration();
+
+		//CUBRID rejects extract(millisecond from <time>), so extract(second from <time>) must omit
+		//the millisecond term that the default SECOND pattern adds
+		functionRegistry.register( "extract", new CUBRIDExtractFunction( this, typeConfiguration ) );
+
+		//the base maps local_time to CUBRID's localtime, but CUBRID's localtime is a TIMESTAMP
+		//(datetime), so time=local_time comparisons fail; render it as current_time (a real TIME)
+		functionRegistry.noArgsBuilder( "local_time", "current_time" )
+				.setInvariantType( typeConfiguration.getBasicTypeRegistry().resolve( StandardBasicTypes.LOCAL_TIME ) )
+				.setUseParenthesesWhenNoArgs( false )
+				.register();
 	}
 
 	@Override
@@ -631,6 +675,86 @@ public class CUBRIDDialect extends Dialect {
 		return 1_000_000; //milliseconds
 	}
 
+	//CUBRID's SQL parser does not understand the JDBC/ODBC escape literal syntax ({d '..'},
+	//{t '..'}, {ts '..'}) that the base dialect emits, so render native date/time/datetime literals
+	//instead (mirrors MySQLDialect). TIMESTAMP uses the 'datetime' keyword to match columnType(TIMESTAMP)
+	//and because CUBRID's 'timestamp' literal rejects fractional seconds.
+	@Override
+	public void appendDateTimeLiteral(
+			SqlAppender appender,
+			TemporalAccessor temporalAccessor,
+			TemporalType precision,
+			TimeZone jdbcTimeZone) {
+		switch ( precision ) {
+			case DATE:
+				appender.appendSql( "date '" );
+				appendAsDate( appender, temporalAccessor );
+				appender.appendSql( '\'' );
+				break;
+			case TIME:
+				appender.appendSql( "time '" );
+				appendAsLocalTime( appender, temporalAccessor );
+				appender.appendSql( '\'' );
+				break;
+			case TIMESTAMP:
+				if ( temporalAccessor instanceof ZonedDateTime zonedDateTime ) {
+					temporalAccessor = zonedDateTime.toOffsetDateTime();
+				}
+				appender.appendSql( "datetime '" );
+				appendAsTimestampWithMicros( appender, temporalAccessor, supportsTemporalLiteralOffset(), jdbcTimeZone, false );
+				appender.appendSql( '\'' );
+				break;
+			default:
+				throw new IllegalArgumentException();
+		}
+	}
+
+	@Override
+	public void appendDateTimeLiteral(SqlAppender appender, Date date, TemporalType precision, TimeZone jdbcTimeZone) {
+		switch ( precision ) {
+			case DATE:
+				appender.appendSql( "date '" );
+				appendAsDate( appender, date );
+				appender.appendSql( '\'' );
+				break;
+			case TIME:
+				appender.appendSql( "time '" );
+				appendAsLocalTime( appender, date );
+				appender.appendSql( '\'' );
+				break;
+			case TIMESTAMP:
+				appender.appendSql( "datetime '" );
+				appendAsTimestampWithMicros( appender, date, jdbcTimeZone );
+				appender.appendSql( '\'' );
+				break;
+			default:
+				throw new IllegalArgumentException();
+		}
+	}
+
+	@Override
+	public void appendDateTimeLiteral(SqlAppender appender, Calendar calendar, TemporalType precision, TimeZone jdbcTimeZone) {
+		switch ( precision ) {
+			case DATE:
+				appender.appendSql( "date '" );
+				appendAsDate( appender, calendar );
+				appender.appendSql( '\'' );
+				break;
+			case TIME:
+				appender.appendSql( "time '" );
+				appendAsLocalTime( appender, calendar );
+				appender.appendSql( '\'' );
+				break;
+			case TIMESTAMP:
+				appender.appendSql( "datetime '" );
+				appendAsTimestampWithMillis( appender, calendar, jdbcTimeZone );
+				appender.appendSql( '\'' );
+				break;
+			default:
+				throw new IllegalArgumentException();
+		}
+	}
+
 	/**
 	 * CUBRID supports a limited list of temporal fields in the
 	 * extract() function, but we can emulate some of them by
@@ -680,6 +804,17 @@ public class CUBRIDDialect extends Dialect {
 			case DAY:
 				//note: datediff() is backwards on CUBRID
 				return "datediff(?3,?2)";
+			//CUBRID has no timestampdiff() builtin; emulate whole-unit counts with component
+			//arithmetic (year()/month()/datediff()), as PostgreSQLDialect does
+			case YEAR:
+				return "(year(?3)-year(?2))";
+			case MONTH:
+				return "((year(?3)-year(?2))*12+(month(?3)-month(?2)))";
+			case QUARTER:
+				return "(((year(?3)-year(?2))*12+(month(?3)-month(?2)))/3)";
+			case WEEK:
+				//note: datediff() is backwards on CUBRID
+				return "(datediff(?3,?2)/7)";
 			case HOUR:
 				timediff(pattern, HOUR, unit);
 				break;
@@ -731,8 +866,8 @@ public class CUBRIDDialect extends Dialect {
 		else {
 			sqlAppender.append("?1");
 		}
-		//note: timediff() is backwards on CUBRID
-		sqlAppender.append(",timediff(?3,?2))");
+		//note: timediff() is backwards on CUBRID; CUBRID extract requires 'from', not a comma
+		sqlAppender.append(" from timediff(?3,?2))");
 		sqlAppender.append( diffUnit.conversionFactor( toUnit, this ) );
 	}
 

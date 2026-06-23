@@ -103,7 +103,11 @@ public class CUBRIDSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 
 	@Override
 	protected void renderComparison(Expression lhs, ComparisonOperator operator, Expression rhs) {
-		renderComparisonEmulateIntersect( lhs, operator, rhs );
+		// CUBRID supports MySQL's null-safe equality operator '<=>', so render
+		// 'is [not] distinct from' as 'not(a <=> b)' / 'a <=> b' instead of the
+		// EXISTS-over-INTERSECT emulation, which yields wrong results for NULL operands
+		// on CUBRID. All other operators fall through to their normal sqlText().
+		renderComparisonDistinctOperator( lhs, operator, rhs );
 	}
 
 	@Override
