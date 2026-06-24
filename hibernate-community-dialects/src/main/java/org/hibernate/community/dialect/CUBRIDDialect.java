@@ -367,6 +367,7 @@ public class CUBRIDDialect extends Dialect {
 			throws SQLException {
 		builder.setUnquotedCaseStrategy( IdentifierCaseStrategy.LOWER );
 		builder.setQuotedCaseStrategy( IdentifierCaseStrategy.LOWER );
+		builder.setAutoQuoteKeywords( true );
 		builder.setAutoQuoteDollar( true );
 		return super.buildIdentifierHelper( builder, metadata );
 	}
