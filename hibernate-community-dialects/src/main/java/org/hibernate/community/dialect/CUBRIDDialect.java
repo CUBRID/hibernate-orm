@@ -399,7 +399,7 @@ public class CUBRIDDialect extends Dialect {
 		functionFactory.addMonths();
 		functionFactory.monthsBetween();
 		functionFactory.rownumInstOrderbyGroupbyNum();
-		functionFactory.regexpLike();
+		functionFactory.regexpLike_regexp();
 	}
 
 	@Override
