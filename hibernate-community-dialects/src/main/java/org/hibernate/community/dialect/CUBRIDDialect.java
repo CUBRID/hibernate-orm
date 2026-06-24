@@ -457,16 +457,6 @@ public class CUBRIDDialect extends Dialect {
 		return SequenceInformationExtractorCUBRIDDatabaseImpl.INSTANCE;
 	}
 
-	@Override
-	public char openQuote() {
-		return '[';
-	}
-
-	@Override
-	public char closeQuote() {
-		return ']';
-	}
-
 	private static final LockingSupport LOCKING_SUPPORT = new LockingSupportSimple(
 			PessimisticLockStyle.CLAUSE,
 			LockTimeoutType.NONE,
