@@ -40,6 +40,8 @@ import org.hibernate.sql.ast.spi.StandardSqlAstTranslatorFactory;
 import org.hibernate.sql.ast.tree.Statement;
 import org.hibernate.sql.exec.spi.JdbcOperation;
 import org.hibernate.tool.schema.extract.spi.SequenceInformationExtractor;
+import org.hibernate.type.descriptor.jdbc.BlobJdbcType;
+import org.hibernate.type.descriptor.jdbc.ClobJdbcType;
 import org.hibernate.type.descriptor.jdbc.JdbcType;
 import org.hibernate.type.descriptor.jdbc.spi.JdbcTypeRegistry;
 import org.hibernate.type.descriptor.sql.internal.BinaryFloatDdlType;
@@ -224,6 +226,35 @@ public class CUBRIDDialect extends Dialect {
 	@Override
 	public int getFloatPrecision() {
 		return 21; // -> 7 decimal digits
+	}
+
+	@Override
+	public void contributeTypes(TypeContributions typeContributions, ServiceRegistry serviceRegistry) {
+		super.contributeTypes( typeContributions, serviceRegistry );
+		final JdbcTypeRegistry jdbcTypeRegistry = typeContributions.getTypeConfiguration().getJdbcTypeRegistry();
+
+		//the CUBRID JDBC driver has no stream-based LOB binding, so materialize
+		//BLOB/CLOB to byte[]/String (setBytes/setString) instead
+		jdbcTypeRegistry.addDescriptor( Types.BLOB, BlobJdbcType.MATERIALIZED );
+		jdbcTypeRegistry.addDescriptor( Types.CLOB, ClobJdbcType.MATERIALIZED );
+		jdbcTypeRegistry.addDescriptor( Types.NCLOB, ClobJdbcType.MATERIALIZED );
+	}
+
+	@Override
+	public boolean useInputStreamToInsertBlob()	 {
+		// the CUBRID JDBC driver has no stream-based LOB binding
+		return false;
+	}
+
+	@Override
+	public boolean useConnectionToCreateLob() {
+		//the CUBRID JDBC driver does not support Connection.createBlob()/createClob()
+		return false;
+	}
+
+	@Override
+	public boolean getDefaultNonContextualLobCreation() {
+		return true;
 	}
 
 	@Override
