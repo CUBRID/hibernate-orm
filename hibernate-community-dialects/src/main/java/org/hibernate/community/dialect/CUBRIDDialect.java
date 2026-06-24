@@ -14,6 +14,7 @@ import org.hibernate.community.dialect.sequence.CUBRIDSequenceSupport;
 import org.hibernate.community.dialect.sequence.SequenceInformationExtractorCUBRIDDatabaseImpl;
 import org.hibernate.dialect.DatabaseVersion;
 import org.hibernate.dialect.Dialect;
+import org.hibernate.dialect.DmlTargetColumnQualifierSupport;
 import org.hibernate.dialect.NullOrdering;
 import org.hibernate.dialect.OracleDialect;
 import org.hibernate.dialect.TimeZoneSupport;
@@ -298,6 +299,24 @@ public class CUBRIDDialect extends Dialect {
 	public ScrollMode defaultScrollMode() {
 		//the CUBRID JDBC driver has no scroll-insensitive cursor; only forward-only is supported
 		return ScrollMode.FORWARD_ONLY;
+	}
+
+	@Override
+	public boolean supportsJoinsInDelete() {
+		//CUBRID supports multi-table/joined DELETE (e.g. DELETE c FROM t c JOIN ... )
+		return true;
+	}
+
+	@Override
+	public boolean supportsFromClauseInUpdate() {
+		//CUBRID supports multi-table/joined UPDATE (e.g. UPDATE t c JOIN ... SET ... )
+		return true;
+	}
+
+	@Override
+	public DmlTargetColumnQualifierSupport getDmlTargetColumnQualifierSupport() {
+		//joined DELETE/UPDATE require the table alias to qualify columns
+		return DmlTargetColumnQualifierSupport.TABLE_ALIAS;
 	}
 
 	@Override
