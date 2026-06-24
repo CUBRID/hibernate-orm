@@ -39,6 +39,8 @@ import org.hibernate.dialect.pagination.LimitHandler;
 import org.hibernate.dialect.pagination.LimitLimitHandler;
 import org.hibernate.dialect.sequence.SequenceSupport;
 import org.hibernate.dialect.type.IntervalType;
+import org.hibernate.dialect.type.MySQLCastingJsonArrayJdbcTypeConstructor;
+import org.hibernate.dialect.type.MySQLCastingJsonJdbcType;
 import org.hibernate.engine.jdbc.dialect.spi.DialectResolutionInfo;
 import org.hibernate.engine.jdbc.env.spi.IdentifierCaseStrategy;
 import org.hibernate.engine.jdbc.env.spi.IdentifierHelper;
@@ -85,6 +87,7 @@ import static org.hibernate.type.descriptor.DateTimeUtils.appendAsTimestampWithM
 import static org.hibernate.type.SqlTypes.BINARY;
 import static org.hibernate.type.SqlTypes.BLOB;
 import static org.hibernate.type.SqlTypes.BOOLEAN;
+import static org.hibernate.type.SqlTypes.JSON;
 import static org.hibernate.type.SqlTypes.TIME;
 import static org.hibernate.type.SqlTypes.TIMESTAMP;
 import static org.hibernate.type.SqlTypes.TIMESTAMP_WITH_TIMEZONE;
@@ -142,6 +145,9 @@ public class CUBRIDDialect extends Dialect {
 
 		ddlTypeRegistry.addDescriptor( new BinaryFloatDdlType( this ) );
 
+		//CUBRID has native JSON support
+		ddlTypeRegistry.addDescriptor( new DdlTypeImpl( JSON, "json", this ) );
+
 		//CUBRID has no 'binary' nor 'varbinary', but 'bit' is
 		//intended to be used for binary data (unfortunately the
 		//length parameter is measured in bits, not bytes)
@@ -195,6 +201,8 @@ public class CUBRIDDialect extends Dialect {
 		registerKeyword( "NAMES" );
 		registerKeyword( "LAST" );
 		registerKeyword( "DEPTH" );
+		//JSON is a reserved word in CUBRID; register it so a column literally named "json" is quoted
+		registerKeyword( "JSON" );
 	}
 
 	public CUBRIDDialect(DialectResolutionInfo info) {
@@ -263,6 +271,9 @@ public class CUBRIDDialect extends Dialect {
 		jdbcTypeRegistry.addDescriptor( Types.BLOB, BlobJdbcType.MATERIALIZED );
 		jdbcTypeRegistry.addDescriptor( Types.CLOB, ClobJdbcType.MATERIALIZED );
 		jdbcTypeRegistry.addDescriptor( Types.NCLOB, ClobJdbcType.MATERIALIZED );
+		//CUBRID has native JSON support with a MySQL-compatible cast(? as json) write expression
+		jdbcTypeRegistry.addDescriptorIfAbsent( JSON, MySQLCastingJsonJdbcType.INSTANCE );
+		jdbcTypeRegistry.addTypeConstructorIfAbsent( MySQLCastingJsonArrayJdbcTypeConstructor.INSTANCE );
 	}
 
 	@Override
