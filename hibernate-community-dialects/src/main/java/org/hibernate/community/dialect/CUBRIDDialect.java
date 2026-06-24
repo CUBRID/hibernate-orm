@@ -38,6 +38,8 @@ import org.hibernate.dialect.lock.spi.OuterJoinLockingType;
 import org.hibernate.dialect.pagination.LimitHandler;
 import org.hibernate.dialect.pagination.LimitLimitHandler;
 import org.hibernate.dialect.sequence.SequenceSupport;
+import org.hibernate.dialect.type.MySQLCastingJsonArrayJdbcTypeConstructor;
+import org.hibernate.dialect.type.MySQLCastingJsonJdbcType;
 import org.hibernate.engine.jdbc.dialect.spi.DialectResolutionInfo;
 import org.hibernate.engine.jdbc.env.spi.IdentifierCaseStrategy;
 import org.hibernate.engine.jdbc.env.spi.IdentifierHelper;
@@ -80,6 +82,7 @@ import static org.hibernate.query.common.TemporalUnit.MINUTE;
 import static org.hibernate.query.common.TemporalUnit.NANOSECOND;
 import static org.hibernate.query.common.TemporalUnit.NATIVE;
 import static org.hibernate.query.common.TemporalUnit.SECOND;
+import static org.hibernate.type.SqlTypes.JSON;
 import static org.hibernate.type.descriptor.DateTimeUtils.appendAsDate;
 import static org.hibernate.type.descriptor.DateTimeUtils.appendAsLocalTime;
 import static org.hibernate.type.descriptor.DateTimeUtils.appendAsTimestampWithMicros;
@@ -143,6 +146,7 @@ public class CUBRIDDialect extends Dialect {
 		final DdlTypeRegistry ddlTypeRegistry = typeContributions.getTypeConfiguration().getDdlTypeRegistry();
 
 		ddlTypeRegistry.addDescriptor( new BinaryFloatDdlType( this ) );
+		ddlTypeRegistry.addDescriptor( new DdlTypeImpl( JSON, "json", this ) );
 
 		//CUBRID has no 'binary' nor 'varbinary', but 'bit' is
 		//intended to be used for binary data (unfortunately the
@@ -197,6 +201,7 @@ public class CUBRIDDialect extends Dialect {
 		registerKeyword( "NAMES" );
 		registerKeyword( "LAST" );
 		registerKeyword( "DEPTH" );
+		registerKeyword( "JSON" );
 	}
 
 	public CUBRIDDialect(DialectResolutionInfo info) {
@@ -266,6 +271,8 @@ public class CUBRIDDialect extends Dialect {
 		jdbcTypeRegistry.addDescriptor( Types.BLOB, BlobJdbcType.MATERIALIZED );
 		jdbcTypeRegistry.addDescriptor( Types.CLOB, ClobJdbcType.MATERIALIZED );
 		jdbcTypeRegistry.addDescriptor( Types.NCLOB, ClobJdbcType.MATERIALIZED );
+		jdbcTypeRegistry.addDescriptor( JSON, MySQLCastingJsonJdbcType.INSTANCE );
+		jdbcTypeRegistry.addTypeConstructorIfAbsent( MySQLCastingJsonArrayJdbcTypeConstructor.INSTANCE );
 	}
 
 	@Override
