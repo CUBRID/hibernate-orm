@@ -320,6 +320,11 @@ public class CUBRIDDialect extends Dialect {
 	}
 
 	@Override
+	public boolean supportsLateral() {
+		return true;
+	}
+
+	@Override
 	public void initializeFunctionRegistry(FunctionContributions functionContributions) {
 		super.initializeFunctionRegistry(functionContributions);
 
