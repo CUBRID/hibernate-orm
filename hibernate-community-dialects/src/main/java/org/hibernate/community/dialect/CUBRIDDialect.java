@@ -419,6 +419,8 @@ public class CUBRIDDialect extends Dialect {
 		functionFactory.monthsBetween();
 		functionFactory.rownumInstOrderbyGroupbyNum();
 		functionFactory.regexpLike_regexp();
+		functionFactory.windowFunctions();
+		functionFactory.hypotheticalOrderedSetAggregates_windowEmulation();
 	}
 
 	@Override
