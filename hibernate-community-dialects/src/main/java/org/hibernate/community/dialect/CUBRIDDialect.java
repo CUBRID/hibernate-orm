@@ -60,6 +60,7 @@ import org.hibernate.sql.ast.spi.StandardSqlAstTranslatorFactory;
 import org.hibernate.sql.ast.tree.Statement;
 import org.hibernate.sql.exec.spi.JdbcOperation;
 import org.hibernate.tool.schema.extract.spi.SequenceInformationExtractor;
+import org.hibernate.type.StandardBasicTypes;
 import org.hibernate.type.descriptor.jdbc.BlobJdbcType;
 import org.hibernate.type.descriptor.jdbc.ClobJdbcType;
 import org.hibernate.type.descriptor.jdbc.JdbcType;
@@ -429,6 +430,13 @@ public class CUBRIDDialect extends Dialect {
 		final TypeConfiguration typeConfiguration = functionContributions.getTypeConfiguration();
 		// CUBRID rejects extract(millisecond from <time>), so register a custom extract for the TIME case
 		functionRegistry.register( "extract", new CUBRIDExtractFunction( this, typeConfiguration ) );
+
+		//the base maps local_time to CUBRID's localtime, but CUBRID's localtime is a TIMESTAMP(datetime),
+		//so time=local_time comparisons fail; render it as current_time (a real TIME)
+		functionRegistry.noArgsBuilder( "local_time", "current_time" )
+				.setInvariantType( typeConfiguration.getBasicTypeRegistry().resolve( StandardBasicTypes.LOCAL_TIME ) )
+				.setUseParenthesesWhenNoArgs( false )
+				.register();
 	}
 
 	@Override
