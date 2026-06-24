@@ -18,6 +18,7 @@ import org.hibernate.sql.ast.tree.expression.Expression;
 import org.hibernate.sql.ast.tree.expression.Literal;
 import org.hibernate.sql.ast.tree.expression.SqlTuple;
 import org.hibernate.sql.ast.tree.expression.Summarization;
+import org.hibernate.sql.ast.tree.from.DerivedTableReference;
 import org.hibernate.sql.ast.tree.from.NamedTableReference;
 import org.hibernate.sql.ast.tree.select.QueryPart;
 import org.hibernate.sql.ast.tree.update.UpdateStatement;
@@ -75,6 +76,17 @@ public class CUBRIDSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 		super.renderDmlTargetTableExpression( tableReference );
 		if ( getClauseStack().getCurrent() != Clause.INSERT ) {
 			renderTableReferenceIdentificationVariable( tableReference );
+		}
+	}
+
+	@Override
+	protected void renderDerivedTableReference(DerivedTableReference tableReference) {
+		if ( tableReference.isLateral() ) {
+			// CUBRID supports the correlated derived table but not the LATERAL keyword, so omit it
+			tableReference.accept( this );
+		}
+		else {
+			super.renderDerivedTableReference( tableReference );
 		}
 	}
 
