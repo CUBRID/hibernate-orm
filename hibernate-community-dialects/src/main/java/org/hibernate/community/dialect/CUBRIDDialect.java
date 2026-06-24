@@ -657,6 +657,14 @@ public class CUBRIDDialect extends Dialect {
 			case DAY:
 				//note: datediff() is backwards on CUBRID
 				return "datediff(?3,?2)";
+			case YEAR:
+				return "(year(?3)-year(?2))";
+			case MONTH:
+				return "((year(?3)-year(?2))*12+(month(?3)-month(?2)))";
+			case QUARTER:
+				return "(((year(?3)-year(?2))*12+(month(?3)-month(?2)))/3)";
+			case WEEK:
+				return "(datediff(?3,?2)/7)";
 			case HOUR:
 				timediff(pattern, HOUR, unit);
 				break;
