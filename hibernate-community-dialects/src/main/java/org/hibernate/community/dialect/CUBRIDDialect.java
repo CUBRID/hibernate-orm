@@ -17,6 +17,7 @@ import org.hibernate.community.dialect.sequence.SequenceInformationExtractorCUBR
 import org.hibernate.dialect.DatabaseVersion;
 import org.hibernate.dialect.Dialect;
 import org.hibernate.dialect.DmlTargetColumnQualifierSupport;
+import org.hibernate.dialect.NationalizationSupport;
 import org.hibernate.dialect.NullOrdering;
 import org.hibernate.dialect.OracleDialect;
 import org.hibernate.dialect.TimeZoneSupport;
@@ -333,6 +334,12 @@ public class CUBRIDDialect extends Dialect {
 	@Override
 	public NameQualifierSupport getNameQualifierSupport() {
 		return NameQualifierSupport.NONE;
+	}
+
+	@Override
+	public NationalizationSupport getNationalizationSupport() {
+		//CUBRID has no nvarchar/nclob types; map nationalized types to the regular varchar/clob
+		return NationalizationSupport.IMPLICIT;
 	}
 
 	@Override
