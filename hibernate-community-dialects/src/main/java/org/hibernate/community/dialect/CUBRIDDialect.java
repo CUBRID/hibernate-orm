@@ -16,6 +16,7 @@ import java.util.TimeZone;
 import org.hibernate.ScrollMode;
 import org.hibernate.boot.model.FunctionContributions;
 import org.hibernate.boot.model.TypeContributions;
+import org.hibernate.community.dialect.function.CUBRIDExtractFunction;
 import org.hibernate.community.dialect.identity.CUBRIDIdentityColumnSupport;
 import org.hibernate.community.dialect.sequence.CUBRIDSequenceSupport;
 import org.hibernate.community.dialect.sequence.SequenceInformationExtractorCUBRIDDatabaseImpl;
@@ -50,6 +51,7 @@ import org.hibernate.exception.spi.ViolatedConstraintNameExtractor;
 import org.hibernate.query.SemanticException;
 import org.hibernate.dialect.type.IntervalType;
 import org.hibernate.query.common.TemporalUnit;
+import org.hibernate.query.sqm.function.SqmFunctionRegistry;
 import org.hibernate.service.ServiceRegistry;
 import org.hibernate.sql.ast.SqlAstTranslator;
 import org.hibernate.sql.ast.SqlAstTranslatorFactory;
@@ -66,6 +68,7 @@ import org.hibernate.type.descriptor.sql.internal.BinaryFloatDdlType;
 import org.hibernate.type.descriptor.sql.internal.CapacityDependentDdlType;
 import org.hibernate.type.descriptor.sql.internal.DdlTypeImpl;
 import org.hibernate.type.descriptor.sql.spi.DdlTypeRegistry;
+import org.hibernate.type.spi.TypeConfiguration;
 
 import jakarta.persistence.TemporalType;
 
@@ -421,6 +424,11 @@ public class CUBRIDDialect extends Dialect {
 		functionFactory.regexpLike_regexp();
 		functionFactory.windowFunctions();
 		functionFactory.hypotheticalOrderedSetAggregates_windowEmulation();
+
+		final SqmFunctionRegistry functionRegistry = functionContributions.getFunctionRegistry();
+		final TypeConfiguration typeConfiguration = functionContributions.getTypeConfiguration();
+		// CUBRID rejects extract(millisecond from <time>), so register a custom extract for the TIME case
+		functionRegistry.register( "extract", new CUBRIDExtractFunction( this, typeConfiguration ) );
 	}
 
 	@Override
