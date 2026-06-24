@@ -4,6 +4,8 @@
  */
 package org.hibernate.community.dialect;
 
+import java.sql.DatabaseMetaData;
+import java.sql.SQLException;
 import java.sql.Types;
 
 import org.hibernate.ScrollMode;
@@ -30,6 +32,10 @@ import org.hibernate.dialect.pagination.LimitHandler;
 import org.hibernate.dialect.pagination.LimitLimitHandler;
 import org.hibernate.dialect.sequence.SequenceSupport;
 import org.hibernate.engine.jdbc.dialect.spi.DialectResolutionInfo;
+import org.hibernate.engine.jdbc.env.spi.IdentifierCaseStrategy;
+import org.hibernate.engine.jdbc.env.spi.IdentifierHelper;
+import org.hibernate.engine.jdbc.env.spi.IdentifierHelperBuilder;
+import org.hibernate.engine.jdbc.env.spi.NameQualifierSupport;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.exception.ConstraintViolationException;
 import org.hibernate.exception.spi.SQLExceptionConversionDelegate;
@@ -322,6 +328,19 @@ public class CUBRIDDialect extends Dialect {
 	@Override
 	public boolean supportsLateral() {
 		return true;
+	}
+
+	@Override
+	public NameQualifierSupport getNameQualifierSupport() {
+		return NameQualifierSupport.NONE;
+	}
+
+	@Override
+	public IdentifierHelper buildIdentifierHelper(IdentifierHelperBuilder builder, DatabaseMetaData metadata)
+			throws SQLException {
+		builder.setUnquotedCaseStrategy( IdentifierCaseStrategy.LOWER );
+		builder.setQuotedCaseStrategy( IdentifierCaseStrategy.LOWER );
+		return super.buildIdentifierHelper( builder, metadata );
 	}
 
 	@Override
