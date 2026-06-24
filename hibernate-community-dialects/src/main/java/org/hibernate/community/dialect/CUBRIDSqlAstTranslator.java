@@ -92,7 +92,8 @@ public class CUBRIDSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 
 	@Override
 	protected void renderComparison(Expression lhs, ComparisonOperator operator, Expression rhs) {
-		renderComparisonEmulateIntersect( lhs, operator, rhs );
+		// CUBRID has the null-safe '<=>' operator; use it for distinct-from instead of the INTERSECT emulation
+		renderComparisonDistinctOperator( lhs, operator, rhs );
 	}
 
 	@Override
