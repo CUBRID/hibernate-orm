@@ -514,15 +514,9 @@ public class CUBRIDDialect extends Dialect {
 		return SequenceInformationExtractorCUBRIDDatabaseImpl.INSTANCE;
 	}
 
-	@Override
-	public char openQuote() {
-		return '[';
-	}
-
-	@Override
-	public char closeQuote() {
-		return ']';
-	}
+	// Use the inherited ANSI double-quote for quoted identifiers. CUBRID accepts "..." (as well as
+	// [...] and backticks), and the ANSI form is what portable mappings/tests expect; the previous
+	// '['/']' (SQL-Server style) produced be1_0.[col] which mismatched those expectations.
 
 	private static final LockingSupport LOCKING_SUPPORT = new LockingSupportSimple(
 			PessimisticLockStyle.CLAUSE,
