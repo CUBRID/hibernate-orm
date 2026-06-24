@@ -6,6 +6,7 @@ package org.hibernate.community.dialect;
 
 import java.sql.Types;
 
+import org.hibernate.ScrollMode;
 import org.hibernate.boot.model.FunctionContributions;
 import org.hibernate.boot.model.TypeContributions;
 import org.hibernate.community.dialect.identity.CUBRIDIdentityColumnSupport;
@@ -292,6 +293,12 @@ public class CUBRIDDialect extends Dialect {
 				case -922, -924 -> extractUsingTemplate( "foreign key '", "'", sqle.getMessage() );
 				default -> null;
 			} );
+
+	@Override
+	public ScrollMode defaultScrollMode() {
+		//the CUBRID JDBC driver has no scroll-insensitive cursor; only forward-only is supported
+		return ScrollMode.FORWARD_ONLY;
+	}
 
 	@Override
 	public void initializeFunctionRegistry(FunctionContributions functionContributions) {
