@@ -412,7 +412,9 @@ public class MetadataContext {
 	private static boolean isIdentifierProperty(Property property, MappedSuperclass mappedSuperclass) {
 		final var identifierMapper = mappedSuperclass.getIdentifierMapper();
 		return identifierMapper != null
-			&& contains( identifierMapper.getPropertyNames(), property.getName() );
+			&& contains( identifierMapper.getPropertyNames(), property.getName() )
+			|| mappedSuperclass.getIdentifierProperty() != null
+				&& property.getName().equals( mappedSuperclass.getIdentifierProperty().getName() );
 	}
 
 	private <T> void addAttribute(EmbeddableDomainType<T> embeddable, Property property, Component component) {
