@@ -716,8 +716,8 @@ public class CUBRIDDialect extends Dialect {
 		else {
 			sqlAppender.append("?1");
 		}
-		//note: timediff() is backwards on CUBRID
-		sqlAppender.append(",timediff(?3,?2))");
+		//note: timediff() is backwards on CUBRID; CUBRID extract requires 'from', not a comma
+		sqlAppender.append(" from timediff(?3,?2))");
 		sqlAppender.append( diffUnit.conversionFactor( toUnit, this ) );
 	}
 
