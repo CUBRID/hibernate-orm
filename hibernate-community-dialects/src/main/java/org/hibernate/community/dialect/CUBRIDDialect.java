@@ -396,7 +396,9 @@ public class CUBRIDDialect extends Dialect {
 		functionFactory.insert();
 		functionFactory.nowCurdateCurtime();
 		functionFactory.makedateMaketime();
-		functionFactory.bitandorxornot_bitAndOrXorNot();
+		//CUBRID's bit_and/or/xor are aggregates (not the scalar 2-arg form HQL bitand(x,y) needs) and there is
+		//no bit_not; use the &|^~ operators instead
+		functionFactory.bitandorxornot_operator();
 		functionFactory.median();
 		functionFactory.stddev();
 		functionFactory.stddevPopSamp();
