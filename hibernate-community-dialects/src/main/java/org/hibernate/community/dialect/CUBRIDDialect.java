@@ -29,6 +29,10 @@ import org.hibernate.dialect.pagination.LimitLimitHandler;
 import org.hibernate.dialect.sequence.SequenceSupport;
 import org.hibernate.engine.jdbc.dialect.spi.DialectResolutionInfo;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
+import org.hibernate.exception.ConstraintViolationException;
+import org.hibernate.exception.spi.SQLExceptionConversionDelegate;
+import org.hibernate.exception.spi.TemplatedViolatedConstraintNameExtractor;
+import org.hibernate.exception.spi.ViolatedConstraintNameExtractor;
 import org.hibernate.query.SemanticException;
 import org.hibernate.dialect.type.IntervalType;
 import org.hibernate.query.common.TemporalUnit;
@@ -51,6 +55,8 @@ import org.hibernate.type.descriptor.sql.spi.DdlTypeRegistry;
 
 import jakarta.persistence.TemporalType;
 
+import static org.hibernate.exception.spi.TemplatedViolatedConstraintNameExtractor.extractUsingTemplate;
+import static org.hibernate.internal.util.JdbcExceptionHelper.extractErrorCode;
 import static org.hibernate.query.common.TemporalUnit.HOUR;
 import static org.hibernate.query.common.TemporalUnit.MINUTE;
 import static org.hibernate.query.common.TemporalUnit.NANOSECOND;
@@ -256,6 +262,36 @@ public class CUBRIDDialect extends Dialect {
 	public boolean getDefaultNonContextualLobCreation() {
 		return true;
 	}
+
+	@Override
+	public SQLExceptionConversionDelegate buildSQLExceptionConversionDelegate() {
+		//CUBRID exposes no SQLState for constraint violations, so classify on the server error code
+		return (sqlException, message, sql) -> switch ( extractErrorCode( sqlException ) ) {
+			case -670, -886, -564 -> new ConstraintViolationException( message, sqlException, sql,
+					ConstraintViolationException.ConstraintKind.UNIQUE,
+					getViolatedConstraintNameExtractor().extractConstraintName( sqlException ) );
+			case -922, -924 -> new ConstraintViolationException( message, sqlException, sql,
+					ConstraintViolationException.ConstraintKind.FOREIGN_KEY,
+					getViolatedConstraintNameExtractor().extractConstraintName( sqlException ) );
+			case -631, -225 -> new ConstraintViolationException( message, sqlException, sql,
+					ConstraintViolationException.ConstraintKind.NOT_NULL,
+					getViolatedConstraintNameExtractor().extractConstraintName( sqlException ) );
+			default -> null;
+		};
+	}
+
+	@Override
+	public ViolatedConstraintNameExtractor getViolatedConstraintNameExtractor() {
+		return EXTRACTOR;
+	}
+
+	//the constraint name is only in the message text, so parse it out by template (English, best-effort)
+	private static final ViolatedConstraintNameExtractor EXTRACTOR =
+			new TemplatedViolatedConstraintNameExtractor( sqle -> switch ( extractErrorCode( sqle ) ) {
+				case -670, -886, -564 -> extractUsingTemplate( "INDEX ", "(", sqle.getMessage() );
+				case -922, -924 -> extractUsingTemplate( "foreign key '", "'", sqle.getMessage() );
+				default -> null;
+			} );
 
 	@Override
 	public void initializeFunctionRegistry(FunctionContributions functionContributions) {
