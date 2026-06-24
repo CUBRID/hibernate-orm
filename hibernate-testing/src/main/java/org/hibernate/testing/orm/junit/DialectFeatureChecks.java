@@ -45,6 +45,7 @@ import org.hibernate.boot.spi.PropertyData;
 import org.hibernate.boot.spi.SecondPass;
 import org.hibernate.cfg.MappingSettings;
 import org.hibernate.community.dialect.AltibaseDialect;
+import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.community.dialect.DerbyDialect;
 import org.hibernate.community.dialect.FirebirdDialect;
 import org.hibernate.community.dialect.GaussDBDialect;
@@ -760,7 +761,8 @@ abstract public class DialectFeatureChecks {
 
 	public static class SupportsFullJoin implements DialectFeatureCheck {
 		public boolean apply(Dialect dialect) {
-			return !( dialect instanceof DerbyDialect );
+			// CUBRID does not support FULL [OUTER] JOIN
+			return !( dialect instanceof DerbyDialect || dialect instanceof CUBRIDDialect );
 		}
 	}
 
