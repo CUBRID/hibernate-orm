@@ -307,6 +307,12 @@ tasks.withType( Test.class ).configureEach { test ->
     //Avoid Log4J2 classloader leaks:
     test.jvmArgs( ['-Dlog4j2.disableJmx=true'] )
 
+    // CUBRID reserves a large set of words (DATA, VALUE, TYPE, ...) and many test entities use such
+    // column/table names; auto-quote keyword-named identifiers so schema export does not fail there.
+    if ( project.db == "cubrid" ) {
+        test.systemProperty 'hibernate.auto_quote_keyword', 'true'
+    }
+
     // see GradleParallelTestingResolver for how the test worker id is resolved in JDBC configs
     if ( project.db == "h2" || project.db == "hsqldb" || project.db == "postgresql" || project.db == "pgsql" || project.db == "edb"
             || project.db == "oracle_xe" || project.db == "mysql" || project.db == "mariadb"
