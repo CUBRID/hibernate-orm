@@ -57,6 +57,7 @@ import static org.hibernate.query.common.TemporalUnit.SECOND;
 import static org.hibernate.type.SqlTypes.BINARY;
 import static org.hibernate.type.SqlTypes.BLOB;
 import static org.hibernate.type.SqlTypes.BOOLEAN;
+import static org.hibernate.type.SqlTypes.TIME;
 import static org.hibernate.type.SqlTypes.TIMESTAMP;
 import static org.hibernate.type.SqlTypes.TIMESTAMP_WITH_TIMEZONE;
 import static org.hibernate.type.SqlTypes.TIME_WITH_TIMEZONE;
@@ -91,8 +92,12 @@ public class CUBRIDDialect extends Dialect {
 	@Override
 	protected String columnType(int sqlTypeCode) {
 		return switch ( sqlTypeCode ) {
-			case BOOLEAN -> "bit";
+			//CUBRID's 'bit' is a fixed-length bit string that rejects boolean host
+			//variables, so map boolean to a numeric type instead
+			case BOOLEAN -> "smallint";
 			case TINYINT -> "smallint";
+			//CUBRID's 'time' does not accept an explicit precision (e.g. time(0))
+			case TIME -> "time";
 			//'timestamp' has a very limited range
 			//'datetime' does not support explicit precision
 			//(always 3, millisecond precision)
@@ -158,6 +163,10 @@ public class CUBRIDDialect extends Dialect {
 		registerKeyword( "ATTRIBUTE" );
 		registerKeyword( "STRING" );
 		registerKeyword( "SEARCH" );
+		registerKeyword( "POSITION" );
+		registerKeyword( "NAMES" );
+		registerKeyword( "LAST" );
+		registerKeyword( "DEPTH" );
 	}
 
 	public CUBRIDDialect(DialectResolutionInfo info) {
@@ -201,7 +210,8 @@ public class CUBRIDDialect extends Dialect {
 
 	@Override
 	public int getPreferredSqlTypeCodeForBoolean() {
-		return Types.BIT;
+		//CUBRID has no native boolean; store as smallint
+		return Types.SMALLINT;
 	}
 
 	//not used for anything right now, but it
@@ -404,11 +414,6 @@ public class CUBRIDDialect extends Dialect {
 	}
 
 	@Override
-	public boolean supportsIsTrue() {
-		return true;
-	}
-
-	@Override
 	public boolean supportsValuesList() {
 		return true;
 	}
@@ -514,7 +519,9 @@ public class CUBRIDDialect extends Dialect {
 
 	@Override
 	public TimeZoneSupport getTimeZoneSupport() {
-		return TimeZoneSupport.NATIVE;
+		//the CUBRID JDBC driver has no java.time support, so route temporal binding
+		//through java.sql.Timestamp by normalizing to the JDBC timezone
+		return TimeZoneSupport.NORMALIZE;
 	}
 
 	@Override
