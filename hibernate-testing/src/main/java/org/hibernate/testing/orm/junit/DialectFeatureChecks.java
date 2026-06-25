@@ -748,8 +748,8 @@ abstract public class DialectFeatureChecks {
 
 	public static class SupportsSubqueryInOnClause implements DialectFeatureCheck {
 		public boolean apply(Dialect dialect) {
-			// TiDB db does not support subqueries for ON condition
-			return !( dialect instanceof TiDBDialect );
+			// TiDB and CUBRID do not support subqueries in an ON condition
+			return !( dialect instanceof TiDBDialect || dialect instanceof CUBRIDDialect );
 		}
 	}
 
