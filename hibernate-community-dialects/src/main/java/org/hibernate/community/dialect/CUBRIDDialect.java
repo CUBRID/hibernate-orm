@@ -66,6 +66,7 @@ import org.hibernate.type.StandardBasicTypes;
 import org.hibernate.type.descriptor.jdbc.BlobJdbcType;
 import org.hibernate.type.descriptor.jdbc.ClobJdbcType;
 import org.hibernate.type.descriptor.jdbc.JdbcType;
+import org.hibernate.type.descriptor.jdbc.VarcharJdbcType;
 import org.hibernate.type.descriptor.jdbc.spi.JdbcTypeRegistry;
 import org.hibernate.type.descriptor.sql.internal.BinaryFloatDdlType;
 import org.hibernate.type.descriptor.sql.internal.CapacityDependentDdlType;
@@ -95,6 +96,7 @@ import static org.hibernate.type.SqlTypes.TIMESTAMP;
 import static org.hibernate.type.SqlTypes.TIMESTAMP_WITH_TIMEZONE;
 import static org.hibernate.type.SqlTypes.TIME_WITH_TIMEZONE;
 import static org.hibernate.type.SqlTypes.TINYINT;
+import static org.hibernate.type.SqlTypes.UUID;
 import static org.hibernate.type.SqlTypes.VARBINARY;
 
 /**
@@ -273,6 +275,9 @@ public class CUBRIDDialect extends Dialect {
 		jdbcTypeRegistry.addDescriptor( Types.NCLOB, ClobJdbcType.MATERIALIZED );
 		jdbcTypeRegistry.addDescriptor( JSON, MySQLCastingJsonJdbcType.INSTANCE );
 		jdbcTypeRegistry.addTypeConstructorIfAbsent( MySQLCastingJsonArrayJdbcTypeConstructor.INSTANCE );
+
+		//CUBRID has no native UUID and its driver cannot bind one to 'bit varying'; store as varchar(36)
+		jdbcTypeRegistry.addDescriptor( UUID, VarcharJdbcType.INSTANCE );
 	}
 
 	@Override
