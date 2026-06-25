@@ -854,7 +854,8 @@ public class CUBRIDDialect extends Dialect {
 
 	@Override
 	public boolean supportsRowValueConstructorSyntax() {
-		return true;
+		// CUBRID supports row value constructors (a,b) only from 11.0; emulate them below that
+		return getVersion().isSameOrAfter( 11, 0 );
 	}
 
 	@Override
@@ -869,7 +870,7 @@ public class CUBRIDDialect extends Dialect {
 
 	@Override
 	public boolean supportsRowValueConstructorSyntaxInInList() {
-		return true;
+		return getVersion().isSameOrAfter( 11, 0 );
 	}
 
 	@Override
