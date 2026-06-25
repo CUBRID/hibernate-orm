@@ -4,6 +4,7 @@
  */
 package org.hibernate.testing;
 
+import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.community.dialect.FirebirdDialect;
 import org.hibernate.dialect.CockroachDialect;
 import org.hibernate.dialect.DB2Dialect;
@@ -298,8 +299,8 @@ abstract public class DialectChecks {
 
 	public static class SupportsSubqueryInOnClause implements DialectCheck {
 		public boolean isMatch(Dialect dialect) {
-			// TiDB db does not support subqueries for ON condition
-			return !( dialect instanceof TiDBDialect );
+			// TiDB and CUBRID do not support subqueries in an ON condition
+			return !( dialect instanceof TiDBDialect || dialect instanceof CUBRIDDialect );
 		}
 	}
 
