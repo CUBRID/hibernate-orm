@@ -28,6 +28,7 @@ import org.hibernate.dialect.NullOrdering;
 import org.hibernate.dialect.OracleDialect;
 import org.hibernate.dialect.TimeZoneSupport;
 import org.hibernate.dialect.function.CommonFunctionFactory;
+import org.hibernate.dialect.function.TruncFunction;
 import org.hibernate.dialect.identity.IdentityColumnSupport;
 import org.hibernate.dialect.lock.PessimisticLockStyle;
 import org.hibernate.dialect.lock.internal.LockingSupportSimple;
@@ -406,7 +407,20 @@ public class CUBRIDDialect extends Dialect {
 		functionFactory.octetLength();
 		functionFactory.bitLength();
 		functionFactory.md5();
-		functionFactory.trunc();
+		//CUBRID's native trunc() truncates numbers and dates only to day granularity, so emulate
+		//datetime truncation (down to second) by formatting via to_char and parsing back with to_datetime
+		functionFactory.format_toChar();
+		functionContributions.getFunctionRegistry().register(
+				"trunc",
+				new TruncFunction(
+						"trunc(?1)",
+						"trunc(?1,?2)",
+						TruncFunction.DatetimeTrunc.FORMAT,
+						"to_datetime",
+						functionContributions.getTypeConfiguration()
+				)
+		);
+		functionContributions.getFunctionRegistry().registerAlternateKey( "truncate", "trunc" );
 		functionFactory.toCharNumberDateTimestamp();
 		functionFactory.substr();
 		//also natively supports ANSI-style substring()
