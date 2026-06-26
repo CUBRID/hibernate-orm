@@ -14,6 +14,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import org.hibernate.community.dialect.AltibaseDialect;
+import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.community.dialect.InformixDialect;
 import org.hibernate.dialect.SpannerPostgreSQLDialect;
 import org.hibernate.dialect.CockroachDialect;
@@ -42,7 +43,7 @@ public class ConstraintInterpretationTest2 {
 			catch (ConstraintViolationException cve) {
 				assertEquals( ConstraintViolationException.ConstraintKind.NOT_NULL, cve.getKind() );
 				// DB2 and Informix error messages don't contain the primary key constraint name
-				if ( !(scope.getDialect() instanceof DB2Dialect) && !(scope.getDialect() instanceof InformixDialect) && !(scope.getDialect() instanceof SpannerPostgreSQLDialect) ) {
+				if ( !(scope.getDialect() instanceof DB2Dialect) && !(scope.getDialect() instanceof InformixDialect) && !(scope.getDialect() instanceof SpannerPostgreSQLDialect) && !(scope.getDialect() instanceof CUBRIDDialect) ) {
 					assertTrue( cve.getConstraintName().toLowerCase().endsWith( "id" ) );
 				}
 			}
@@ -69,7 +70,7 @@ public class ConstraintInterpretationTest2 {
 			catch (ConstraintViolationException cve) {
 				assertEquals( ConstraintViolationException.ConstraintKind.NOT_NULL, cve.getKind() );
 				// DB2 error message doesn't contain constraint or column name
-				if ( !(scope.getDialect() instanceof DB2Dialect) && !(scope.getDialect() instanceof SpannerPostgreSQLDialect) ) {
+				if ( !(scope.getDialect() instanceof DB2Dialect) && !(scope.getDialect() instanceof SpannerPostgreSQLDialect) && !(scope.getDialect() instanceof CUBRIDDialect) ) {
 					assertTrue( cve.getConstraintName().toLowerCase().endsWith( "name" ) );
 				}
 			}
