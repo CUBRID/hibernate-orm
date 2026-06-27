@@ -784,6 +784,8 @@ public class CUBRIDDialect extends Dialect {
 			case DAY_OF_MONTH ->"dayofmonth(?2)";
 			case DAY_OF_YEAR -> "dayofyear(?2)";
 			case WEEK -> "week(?2,3)"; //mode 3 is the ISO week
+			//CUBRID has no 'epoch' field; use unix_timestamp (seconds since 1970-01-01)
+			case EPOCH -> "unix_timestamp(?2)";
 			default -> "?1(?2)";
 		};
 	}
