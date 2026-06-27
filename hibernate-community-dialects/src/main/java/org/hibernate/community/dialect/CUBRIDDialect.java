@@ -81,11 +81,6 @@ import jakarta.persistence.TemporalType;
 
 import static org.hibernate.exception.spi.TemplatedViolatedConstraintNameExtractor.extractUsingTemplate;
 import static org.hibernate.internal.util.JdbcExceptionHelper.extractErrorCode;
-import static org.hibernate.query.common.TemporalUnit.HOUR;
-import static org.hibernate.query.common.TemporalUnit.MINUTE;
-import static org.hibernate.query.common.TemporalUnit.NANOSECOND;
-import static org.hibernate.query.common.TemporalUnit.NATIVE;
-import static org.hibernate.query.common.TemporalUnit.SECOND;
 import static org.hibernate.type.SqlTypes.JSON;
 import static org.hibernate.type.descriptor.DateTimeUtils.appendAsDate;
 import static org.hibernate.type.descriptor.DateTimeUtils.appendAsLocalTime;
@@ -821,7 +816,6 @@ public class CUBRIDDialect extends Dialect {
 
 	@Override
 	public String timestampdiffPattern(TemporalUnit unit, TemporalType fromTemporalType, TemporalType toTemporalType) {
-		StringBuilder pattern = new StringBuilder();
 		switch ( unit ) {
 			case DAY:
 				//note: datediff() is backwards on CUBRID
@@ -834,60 +828,55 @@ public class CUBRIDDialect extends Dialect {
 				return "(((year(?3)-year(?2))*12+(month(?3)-month(?2)))/3)";
 			case WEEK:
 				return "(datediff(?3,?2)/7)";
+			//CUBRID has no timestampdiff() and timediff() overflows past 24h (the TIME range), so build
+			//the difference in whole seconds with datediff()+time_to_sec() (overflow-free) and scale it
+			//to the requested unit. Integer '/' truncates on CUBRID, matching timestampdiff semantics.
 			case HOUR:
-				timediff(pattern, HOUR, unit);
-				break;
+				return "(" + secondDiff( fromTemporalType, toTemporalType ) + "/3600)";
 			case MINUTE:
-				pattern.append("(");
-				timediff(pattern, MINUTE, unit);
-				pattern.append("+");
-				timediff(pattern, HOUR, unit);
-				pattern.append(")");
-				break;
+				return "(" + secondDiff( fromTemporalType, toTemporalType ) + "/60)";
 			case SECOND:
-				pattern.append("(");
-				timediff(pattern, SECOND, unit);
-				pattern.append("+");
-				timediff(pattern, MINUTE, unit);
-				pattern.append("+");
-				timediff(pattern, HOUR, unit);
-				pattern.append(")");
-				break;
+				return secondDiff( fromTemporalType, toTemporalType );
 			case NATIVE:
+				//CUBRID's native fractional-second precision is milliseconds. A sub-second diff cannot be
+				//computed portably (current_timestamp is a second-precision TIMESTAMP and extract(millisecond)
+				//rejects it), so the diff is capped at whole seconds scaled to milliseconds.
+				return "(" + secondDiff( fromTemporalType, toTemporalType ) + "*1e3)";
 			case NANOSECOND:
-				pattern.append("(");
-				timediff(pattern, unit, unit);
-				pattern.append("+");
-				timediff(pattern, SECOND, unit);
-				pattern.append("+");
-				timediff(pattern, MINUTE, unit);
-				pattern.append("+");
-				timediff(pattern, HOUR, unit);
-				pattern.append(")");
-				break;
+				//second-precision cap (see NATIVE): the sub-second digits are always 0
+				return "(" + secondDiff( fromTemporalType, toTemporalType ) + "*1e9)";
 			default:
 				throw new SemanticException("unsupported temporal unit for CUBRID: " + unit);
 		}
-		return pattern.toString();
 	}
 
-	private void timediff(
-			StringBuilder sqlAppender,
-			TemporalUnit diffUnit,
-			TemporalUnit toUnit) {
-		if ( diffUnit == NANOSECOND ) {
-			sqlAppender.append("1e6*");
+	/**
+	 * Renders the difference in whole seconds between {@code ?2} (from) and {@code ?3} (to) without
+	 * {@code timediff()}, which is limited to CUBRID's 24-hour TIME range. The whole-day part comes from
+	 * {@code datediff()} and the time-of-day part from {@code time_to_sec()}; each is omitted for an
+	 * operand that carries no date (a TIME) or no time (a DATE), since those functions reject such a value.
+	 */
+	private static String secondDiff(TemporalType fromTemporalType, TemporalType toTemporalType) {
+		final boolean wholeDays = fromTemporalType != TemporalType.TIME && toTemporalType != TemporalType.TIME;
+		final boolean toHasTime = toTemporalType != TemporalType.DATE;
+		final boolean fromHasTime = fromTemporalType != TemporalType.DATE;
+		final StringBuilder pattern = new StringBuilder( "(" );
+		String separator = "";
+		if ( wholeDays ) {
+			//note: datediff() is backwards on CUBRID and ignores the time component
+			pattern.append( "datediff(?3,?2)*86400" );
+			separator = "+";
 		}
-		sqlAppender.append("extract(");
-		if ( diffUnit == NANOSECOND || diffUnit == NATIVE ) {
-			sqlAppender.append("millisecond");
+		if ( toHasTime ) {
+			pattern.append( separator ).append( "time_to_sec(?3)" );
 		}
-		else {
-			sqlAppender.append("?1");
+		if ( fromHasTime ) {
+			if ( pattern.length() == 1 ) {
+				pattern.append( "0" );
+			}
+			pattern.append( "-time_to_sec(?2)" );
 		}
-		//note: timediff() is backwards on CUBRID; CUBRID extract requires 'from', not a comma
-		sqlAppender.append(" from timediff(?3,?2))");
-		sqlAppender.append( diffUnit.conversionFactor( toUnit, this ) );
+		return pattern.append( ")" ).toString();
 	}
 
 	@Override
