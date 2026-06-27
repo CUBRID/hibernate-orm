@@ -805,6 +805,19 @@ public class CUBRIDDialect extends Dialect {
 
 	@Override
 	public String timestampaddPattern(TemporalUnit unit, TemporalType temporalType, IntervalType intervalType) {
+		if ( temporalType == TemporalType.TIME ) {
+			//CUBRID cannot add an interval to a 'time' (adddate rejects a time operand), so convert the
+			//time to seconds, add the interval, and wrap back into a single day [0,86400) via sec_to_time
+			final String seconds = switch ( unit ) {
+				case SECOND -> "(?2)";
+				case MINUTE -> "(?2)*60";
+				case HOUR -> "(?2)*3600";
+				default -> null;
+			};
+			if ( seconds != null ) {
+				return "sec_to_time(((time_to_sec(?3)+" + seconds + ") mod 86400+86400) mod 86400)";
+			}
+		}
 		return switch (unit) {
 			case NANOSECOND -> "adddate(?3,interval (?2)/1e6 millisecond)";
 			case NATIVE -> "adddate(?3,interval ?2 millisecond)";
