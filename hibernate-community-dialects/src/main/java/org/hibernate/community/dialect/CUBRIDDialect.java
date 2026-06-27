@@ -72,6 +72,8 @@ import org.hibernate.type.descriptor.jdbc.spi.JdbcTypeRegistry;
 import org.hibernate.type.descriptor.sql.internal.BinaryFloatDdlType;
 import org.hibernate.type.descriptor.sql.internal.CapacityDependentDdlType;
 import org.hibernate.type.descriptor.sql.internal.DdlTypeImpl;
+import org.hibernate.engine.jdbc.Size;
+import org.hibernate.metamodel.mapping.SqlExpressible;
 import org.hibernate.type.descriptor.sql.spi.DdlTypeRegistry;
 import org.hibernate.type.spi.TypeConfiguration;
 
@@ -90,6 +92,9 @@ import static org.hibernate.type.descriptor.DateTimeUtils.appendAsLocalTime;
 import static org.hibernate.type.descriptor.DateTimeUtils.appendAsTimestampWithMicros;
 import static org.hibernate.type.descriptor.DateTimeUtils.appendAsTimestampWithMillis;
 import static org.hibernate.type.SqlTypes.BINARY;
+import static org.hibernate.type.SqlTypes.DOUBLE;
+import static org.hibernate.type.SqlTypes.FLOAT;
+import static org.hibernate.type.SqlTypes.REAL;
 import static org.hibernate.type.SqlTypes.BLOB;
 import static org.hibernate.type.SqlTypes.BOOLEAN;
 import static org.hibernate.type.SqlTypes.TIME;
@@ -144,11 +149,28 @@ public class CUBRIDDialect extends Dialect {
 	}
 
 	@Override
+	protected String castType(int sqlTypeCode) {
+		//CUBRID rejects an explicit binary precision (e.g. float(53)) as a cast target,
+		//so cast floating-point types to 'double' instead of float($p)
+		return switch ( sqlTypeCode ) {
+			case FLOAT, REAL, DOUBLE -> "double";
+			default -> super.castType( sqlTypeCode );
+		};
+	}
+
+	@Override
 	protected void registerColumnTypes(TypeContributions typeContributions, ServiceRegistry serviceRegistry) {
 		super.registerColumnTypes( typeContributions, serviceRegistry );
 		final DdlTypeRegistry ddlTypeRegistry = typeContributions.getTypeConfiguration().getDdlTypeRegistry();
 
-		ddlTypeRegistry.addDescriptor( new BinaryFloatDdlType( this ) );
+		//keep BinaryFloatDdlType's binary->decimal precision conversion for DDL, but cast
+		//floating-point to 'double' since CUBRID rejects float($p) with a large precision (e.g. float(53))
+		ddlTypeRegistry.addDescriptor( new BinaryFloatDdlType( this ) {
+			@Override
+			public String getCastTypeName(Size columnSize, SqlExpressible type, DdlTypeRegistry registry) {
+				return "double";
+			}
+		} );
 		ddlTypeRegistry.addDescriptor( new DdlTypeImpl( JSON, "json", this ) );
 
 		//CUBRID has no 'binary' nor 'varbinary', but 'bit' is
