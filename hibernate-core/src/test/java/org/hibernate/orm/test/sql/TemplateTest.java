@@ -63,7 +63,9 @@ public class TemplateTest {
 		assertWhereStringTemplate( "time with time zone 'a'", factory );
 		assertWhereStringTemplate( "date", "{@}.date", factory );
 		assertWhereStringTemplate( "time", "{@}.time", factory );
-		assertWhereStringTemplate( "zone", "{@}.zone", factory );
+		// 'zone' is a column unless the dialect reserves it as a keyword (e.g. CUBRID)
+		assertWhereStringTemplate( "zone",
+				dialect.getKeywords().contains( "zone" ) ? "zone" : "{@}.zone", factory );
 		assertWhereStringTemplate("select date from thetable",
 				"select {@}.date from thetable", factory );
 		assertWhereStringTemplate("select date '2000-12-1' from thetable",
@@ -84,6 +86,7 @@ public class TemplateTest {
 	@JiraKey("HHH-19695")
 	public void testFetchGrammarVsColumnNames(SessionFactoryScope scope) {
 		SessionFactoryImplementor factory = scope.getSessionFactory();
+		Dialect dialect = factory.getJdbcServices().getDialect();
 
 		// Test that "first" and "next" are treated as keywords when part of FETCH grammar
 		assertWhereStringTemplate( "fetch first 10 rows only", "fetch first 10 rows only", factory );
@@ -96,10 +99,13 @@ public class TemplateTest {
 				"select {@}.first_name from users fetch first 10 rows only", factory );
 		assertWhereStringTemplate( "where fetch_count > 5 and fetch next 1 row only",
 				"where {@}.fetch_count > 5 and fetch next 1 row only", factory );
+		// 'first'/'next' are columns here unless the dialect reserves them as keywords (e.g. CUBRID reserves 'first')
+		final String first = dialect.getKeywords().contains( "first" ) ? "first" : "{@}.first";
 		assertWhereStringTemplate( "select first from users fetch first 10 rows only",
-				"select {@}.first from users fetch first 10 rows only", factory );
+				"select " + first + " from users fetch first 10 rows only", factory );
+		final String next = dialect.getKeywords().contains( "next" ) ? "next" : "{@}.next";
 		assertWhereStringTemplate( "select next from users fetch next 10 rows only",
-				"select {@}.next from users fetch next 10 rows only", factory );
+				"select " + next + " from users fetch next 10 rows only", factory );
 	}
 
 	@Test
@@ -122,9 +128,10 @@ public class TemplateTest {
 		assertWhereStringTemplate( "fetch    first   10   rows   only", "fetch    first   10   rows   only", factory );
 		assertWhereStringTemplate( "fetch\nfirst 3 rows only", "fetch\nfirst 3 rows only", factory );
 
-		// State reset after ONLY: trailing 'next' should be qualified
+		// State reset after ONLY: trailing 'next' is a column unless the dialect reserves it
+		final String next = dialect.getKeywords().contains( "next" ) ? "next" : "{@}.next";
 		assertWhereStringTemplate( "fetch next 1 rows only and next > 5",
-				"fetch next 1 rows only and {@}.next > 5", factory );
+				"fetch next 1 rows only and " + next + " > 5", factory );
 
 		// Qualified identifier should remain as-is
 		assertWhereStringTemplate( "select u.first from users u fetch first 1 row only",
