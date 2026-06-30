@@ -54,6 +54,7 @@ import org.hibernate.exception.spi.ViolatedConstraintNameExtractor;
 import org.hibernate.query.SemanticException;
 import org.hibernate.dialect.type.IntervalType;
 import org.hibernate.query.common.TemporalUnit;
+import org.hibernate.query.sqm.CastType;
 import org.hibernate.query.sqm.function.SqmFunctionRegistry;
 import org.hibernate.service.ServiceRegistry;
 import org.hibernate.sql.ast.SqlAstTranslator;
@@ -151,6 +152,22 @@ public class CUBRIDDialect extends Dialect {
 			case FLOAT, REAL, DOUBLE -> "double";
 			default -> super.castType( sqlTypeCode );
 		};
+	}
+
+	@Override
+	public String castPattern(CastType from, CastType to) {
+		// CUBRID's default temporal-to-string cast uses a locale format; render ISO via to_char
+		if ( to == CastType.STRING ) {
+			switch ( from ) {
+				case DATE:
+					return "to_char(?1,'YYYY-MM-DD')";
+				case TIME:
+					return "to_char(?1,'HH24:MI:SS')";
+				case TIMESTAMP:
+					return "to_char(?1,'YYYY-MM-DD HH24:MI:SS.FF')";
+			}
+		}
+		return super.castPattern( from, to );
 	}
 
 	@Override
