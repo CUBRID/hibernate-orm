@@ -16,6 +16,7 @@ import org.hibernate.processor.ImportContextImpl;
 import org.hibernate.processor.ProcessLaterException;
 import org.hibernate.processor.model.ImportContext;
 import org.hibernate.processor.model.MetaAttribute;
+import org.hibernate.processor.spi.QuarkusDataTypeNames;
 import org.hibernate.processor.model.Metamodel;
 import org.hibernate.processor.util.AccessTypeInformation;
 import org.hibernate.processor.util.Constants;
@@ -594,7 +595,7 @@ public class AnnotationMetaEntity extends AnnotationMeta {
 
 			addIdClassIfNeeded( fieldsOfClass, gettersAndSettersOfClass );
 
-			if ( hasAnnotation( element, ENTITY ) && isPanache2Type( element ) && !jakartaDataStaticModel ) {
+			if ( hasAnnotation( element, ENTITY ) && isQuarkusDataType( element ) && !jakartaDataStaticModel ) {
 				addRepositoryMembers( element );
 			}
 		}
@@ -653,6 +654,7 @@ public class AnnotationMetaEntity extends AnnotationMeta {
 	}
 
 	private void addRepositoryMembers(TypeElement element) {
+		final QuarkusDataTypeNames typeNames = context.quarkusDataTypeNames();
 		Element managedBlockingRepository = null;
 		Element statelessBlockingRepository = null;
 		Element managedReactiveRepository = null;
@@ -666,19 +668,19 @@ public class AnnotationMetaEntity extends AnnotationMeta {
 					continue;
 				}
 				if ( implementsInterface( (TypeElement) enclosedElement,
-						Constants.PANACHE2_MANAGED_BLOCKING_REPOSITORY_BASE ) ) {
+						typeNames.managedBlockingRepositoryBase() ) ) {
 					managedBlockingRepository = enclosedElement;
 				}
 				else if ( implementsInterface( (TypeElement) enclosedElement,
-						Constants.PANACHE2_STATELESS_BLOCKING_REPOSITORY_BASE ) ) {
+						typeNames.statelessBlockingRepositoryBase() ) ) {
 					statelessBlockingRepository = enclosedElement;
 				}
 				else if ( implementsInterface( (TypeElement) enclosedElement,
-						Constants.PANACHE2_MANAGED_REACTIVE_REPOSITORY_BASE ) ) {
+						typeNames.managedReactiveRepositoryBase() ) ) {
 					managedReactiveRepository = enclosedElement;
 				}
 				else if ( implementsInterface( (TypeElement) enclosedElement,
-						Constants.PANACHE2_STATELESS_REACTIVE_REPOSITORY_BASE ) ) {
+						typeNames.statelessReactiveRepositoryBase() ) ) {
 					statelessReactiveRepository = enclosedElement;
 				}
 			}
@@ -687,15 +689,15 @@ public class AnnotationMetaEntity extends AnnotationMeta {
 			// FIXME: perhaps import id type?
 			final var idType = findIdType();
 			addAccessors( managedBlockingRepository, idType, "managedBlocking",
-					PANACHE2_MANAGED_BLOCKING_REPOSITORY_BASE, nestedRepositories );
+					typeNames.managedBlockingRepositoryBase(), nestedRepositories );
 			addAccessors( statelessBlockingRepository, idType, "statelessBlocking",
-					PANACHE2_STATELESS_BLOCKING_REPOSITORY_BASE, nestedRepositories );
+					typeNames.statelessBlockingRepositoryBase(), nestedRepositories );
 			// Only add those if HR is in the classpath, otherwise it causes a compilation issue
 			if ( context.usesQuarkusReactiveCommon() ) {
 				addAccessors( managedReactiveRepository, idType, "managedReactive",
-						PANACHE2_MANAGED_REACTIVE_REPOSITORY_BASE, nestedRepositories );
+						typeNames.managedReactiveRepositoryBase(), nestedRepositories );
 				addAccessors( statelessReactiveRepository, idType, "statelessReactive",
-						PANACHE2_STATELESS_REACTIVE_REPOSITORY_BASE, nestedRepositories );
+						typeNames.statelessReactiveRepositoryBase(), nestedRepositories );
 			}
 		}
 	}
@@ -1141,11 +1143,11 @@ public class AnnotationMetaEntity extends AnnotationMeta {
 			final var getter = findSessionGetter( element );
 			if ( getter != null ) {
 				// Never make a DAO for Panache subtypes
-				if ( !isPanacheType( element ) && !isPanache2Type( element ) ) {
+				if ( !isPanacheType( element ) && !isQuarkusDataType( element ) ) {
 					repository = true;
 					sessionType = addRepositoryConstructor( getter );
 				}
-				else if ( !isPanache2Repository( element ) && !isPanache2Type( element ) ) {
+				else if ( !isQuarkusDataRepository( element, context.quarkusDataTypeNames() ) && !isQuarkusDataType( element ) ) {
 					// For Panache 1 subtypes, we look at the session type, but no DAO,
 					// we want static methods
 					sessionType = fullReturnType( getter );
@@ -1158,7 +1160,7 @@ public class AnnotationMetaEntity extends AnnotationMeta {
 			}
 			else if ( element.getKind() == ElementKind.INTERFACE
 					&& !jakartaDataRepository
-					&& (context.usesQuarkusOrm() || context.usesQuarkusReactive() || context.usesQuarkusPanache2()) ) {
+					&& (context.usesQuarkusOrm() || context.usesQuarkusReactive() || context.usesQuarkusDataHibernate()) ) {
 				// if we don't have a getter, and not a JD repository, but we're in Quarkus,
 				// we know how to find the default sessions
 				repository = true;
@@ -1304,16 +1306,17 @@ public class AnnotationMetaEntity extends AnnotationMeta {
 			|| extendsClass( type, PANACHE_REACTIVE_ENTITY_BASE );
 	}
 
-	private boolean isPanache2Type(TypeElement type) {
-		return implementsInterface( type, PANACHE2_ENTITY_MARKER )
-			|| isPanache2Repository( type );
+	private boolean isQuarkusDataType(TypeElement type) {
+		final QuarkusDataTypeNames typeNames = context.quarkusDataTypeNames();
+		return implementsInterface( type, typeNames.entityMarker() )
+			|| isQuarkusDataRepository( type, typeNames );
 	}
 
-	public static boolean isPanache2Repository(TypeElement type) {
-		return implementsInterface( type, PANACHE2_MANAGED_BLOCKING_REPOSITORY_BASE )
-			|| implementsInterface( type, PANACHE2_STATELESS_BLOCKING_REPOSITORY_BASE )
-			|| implementsInterface( type, PANACHE2_MANAGED_REACTIVE_REPOSITORY_BASE )
-			|| implementsInterface( type, PANACHE2_STATELESS_REACTIVE_REPOSITORY_BASE );
+	public static boolean isQuarkusDataRepository(TypeElement type, QuarkusDataTypeNames typeNames) {
+		return implementsInterface( type, typeNames.managedBlockingRepositoryBase() )
+			|| implementsInterface( type, typeNames.statelessBlockingRepositoryBase() )
+			|| implementsInterface( type, typeNames.managedReactiveRepositoryBase() )
+			|| implementsInterface( type, typeNames.statelessReactiveRepositoryBase() );
 	}
 
 	/**
@@ -1366,8 +1369,9 @@ public class AnnotationMetaEntity extends AnnotationMeta {
 	private String setupQuarkusRepositoryConstructor(@Nullable ExecutableElement getter, @Nullable TypeElement element) {
 		// FIXME: probably go in this branch if we have a getter too?
 		if ( isBlockingFavored( element ) ) {
-			final var name = quarkusSessionGetterName( getter, element );
-			final var sessionType = quarkusSessionType( getter, element );
+			final var typeNames = context.quarkusDataTypeNames();
+			final var name = quarkusSessionGetterName( getter, element, typeNames );
+			final var sessionType = quarkusSessionType( getter, element, typeNames );
 			putMember( name,
 					new RepositoryConstructor(
 							this,
@@ -1388,7 +1392,7 @@ public class AnnotationMetaEntity extends AnnotationMeta {
 		else {
 			importType( Constants.QUARKUS_SESSION_OPERATIONS );
 			// use this getter to get the method, do not generate an injection point for its type
-			if ( element != null && isPanache2StatelessReactiveRepository( element ) ) {
+			if ( element != null && isQuarkusDataStatelessReactiveRepository( element, context.quarkusDataTypeNames() ) ) {
 				sessionGetter = "SessionOperations.getStatelessSession()";
 				return UNI_MUTINY_STATELESS_SESSION;
 			}
@@ -1399,11 +1403,12 @@ public class AnnotationMetaEntity extends AnnotationMeta {
 		}
 	}
 
-	private static String quarkusSessionGetterName(@Nullable ExecutableElement getter, @Nullable TypeElement element) {
+	private static String quarkusSessionGetterName(@Nullable ExecutableElement getter, @Nullable TypeElement element,
+			QuarkusDataTypeNames typeNames) {
 		if ( getter != null ) {
 			return getter.getSimpleName().toString();
 		}
-		else if ( element != null && isPanache2StatelessBlockingRepository( element ) ) {
+		else if ( element != null && isQuarkusDataStatelessBlockingRepository( element, typeNames ) ) {
 			return "getStatelessSession";
 		}
 		else { // good default
@@ -1411,11 +1416,12 @@ public class AnnotationMetaEntity extends AnnotationMeta {
 		}
 	}
 
-	private String quarkusSessionType(@Nullable ExecutableElement getter, @Nullable TypeElement element) {
+	private String quarkusSessionType(@Nullable ExecutableElement getter, @Nullable TypeElement element,
+			QuarkusDataTypeNames typeNames) {
 		if ( getter != null ) {
 			return fullReturnType( getter );
 		}
-		else if ( element != null && isPanache2StatelessBlockingRepository( element ) ) {
+		else if ( element != null && isQuarkusDataStatelessBlockingRepository( element, typeNames ) ) {
 			return HIB_STATELESS_SESSION;
 		}
 		else { // good default
@@ -1425,9 +1431,10 @@ public class AnnotationMetaEntity extends AnnotationMeta {
 
 	private boolean isBlockingFavored(@Nullable TypeElement element) {
 		if ( element != null ) {
-			if ( context.usesQuarkusPanache2()
-					&& isPanache2Repository( element ) ) {
-				return isPanache2BlockingRepository( element );
+			final QuarkusDataTypeNames typeNames = context.quarkusDataTypeNames();
+			if ( context.usesQuarkusDataHibernate()
+					&& isQuarkusDataRepository( element, typeNames ) ) {
+				return isQuarkusDataBlockingRepository( element, typeNames );
 			}
 			else {
 				// look for any annotated method, see if they return a Uni
@@ -1442,17 +1449,17 @@ public class AnnotationMetaEntity extends AnnotationMeta {
 		return context.usesQuarkusOrm();
 	}
 
-	private static boolean isPanache2BlockingRepository(@Nonnull TypeElement element) {
-		return implementsInterface( element, PANACHE2_MANAGED_BLOCKING_REPOSITORY_BASE )
-			|| implementsInterface( element, PANACHE2_STATELESS_BLOCKING_REPOSITORY_BASE );
+	private static boolean isQuarkusDataBlockingRepository(@Nonnull TypeElement element, QuarkusDataTypeNames typeNames) {
+		return implementsInterface( element, typeNames.managedBlockingRepositoryBase() )
+			|| implementsInterface( element, typeNames.statelessBlockingRepositoryBase() );
 	}
 
-	private static boolean isPanache2StatelessReactiveRepository(@Nonnull TypeElement element) {
-		return implementsInterface( element, PANACHE2_STATELESS_REACTIVE_REPOSITORY_BASE );
+	private static boolean isQuarkusDataStatelessReactiveRepository(@Nonnull TypeElement element, QuarkusDataTypeNames typeNames) {
+		return implementsInterface( element, typeNames.statelessReactiveRepositoryBase() );
 	}
 
-	private static boolean isPanache2StatelessBlockingRepository(@Nonnull TypeElement element) {
-		return implementsInterface( element, PANACHE2_STATELESS_BLOCKING_REPOSITORY_BASE );
+	private static boolean isQuarkusDataStatelessBlockingRepository(@Nonnull TypeElement element, QuarkusDataTypeNames typeNames) {
+		return implementsInterface( element, typeNames.statelessBlockingRepositoryBase() );
 	}
 
 	/**
