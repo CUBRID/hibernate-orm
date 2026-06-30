@@ -806,10 +806,9 @@ public class CUBRIDDialect extends Dialect {
 
 	@Override
 	public void appendDatetimeFormat(SqlAppender appender, String format) {
-		//I do not know if CUBRID supports FM, but it
-		//seems that it does pad by default, so it needs it!
+		// CUBRID rejects the FM fill-mode modifier, so do not emit it
 		appender.appendSql(
-				OracleDialect.datetimeFormat( format, true, false )
+				OracleDialect.datetimeFormat( format, false, false )
 				.replace("SSSSSS", "FF")
 				.replace("SSSSS", "FF")
 				.replace("SSSS", "FF")
