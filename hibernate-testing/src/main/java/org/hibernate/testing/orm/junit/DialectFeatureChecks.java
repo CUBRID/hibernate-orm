@@ -195,7 +195,8 @@ abstract public class DialectFeatureChecks {
 	public static class SupportsJdbcEscapes implements DialectFeatureCheck {
 		@Override
 		public boolean apply(Dialect dialect) {
-			return !(dialect instanceof SpannerPostgreSQLDialect || dialect instanceof SpannerDialect);
+			return !(dialect instanceof SpannerPostgreSQLDialect || dialect instanceof SpannerDialect
+					|| dialect instanceof CUBRIDDialect);
 		}
 	}
 
@@ -563,7 +564,14 @@ abstract public class DialectFeatureChecks {
 	public static class SupportsWithTies implements DialectFeatureCheck {
 		public boolean apply(Dialect dialect) {
 			return dialect.supportsFetchClause( FetchClauseType.ROWS_WITH_TIES )
-				|| dialect.supportsWindowFunctions();
+				|| dialect.supportsWindowFrames();
+		}
+	}
+
+	public static class SupportsFetchClausePercent implements DialectFeatureCheck {
+		public boolean apply(Dialect dialect) {
+			return dialect.supportsFetchClause( FetchClauseType.PERCENT_ONLY )
+				|| dialect.supportsWindowFrames();
 		}
 	}
 
@@ -1067,7 +1075,8 @@ abstract public class DialectFeatureChecks {
 
 	public static class SupportsArrayComparison implements DialectFeatureCheck {
 		public boolean apply(Dialect dialect) {
-			return !(dialect instanceof SpannerPostgreSQLDialect || dialect instanceof SpannerDialect);
+			return !(dialect instanceof SpannerPostgreSQLDialect || dialect instanceof SpannerDialect
+					|| dialect instanceof CUBRIDDialect);
 		}
 	}
 
