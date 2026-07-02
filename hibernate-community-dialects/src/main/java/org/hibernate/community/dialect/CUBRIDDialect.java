@@ -555,12 +555,17 @@ public class CUBRIDDialect extends Dialect {
 		functionFactory.log2();
 		functionFactory.log10();
 		functionFactory.pi();
-		//rand() returns an integer between 0 and 2^31 on CUBRID
-//		functionFactory.rand();
+		// CUBRID's rand() returns an integer; drand() returns a double in [0,1) like HQL rand()
+		functionContributions.getFunctionRegistry().namedDescriptorBuilder( "rand", "drand" )
+				.setArgumentCountBetween( 0, 1 )
+				.setInvariantType(
+						functionContributions.getTypeConfiguration().getBasicTypeRegistry()
+								.resolve( StandardBasicTypes.DOUBLE ) )
+				.setUseParenthesesWhenNoArgs( true )
+				.register();
 		functionFactory.radians();
 		functionFactory.degrees();
 		functionFactory.systimestamp();
-		//TODO: CUBRID also has systime()/sysdate() returning TIME/DATE
 		functionFactory.localtimeLocaltimestamp();
 		functionFactory.hourMinuteSecond();
 		functionFactory.yearMonthDay();
@@ -1026,8 +1031,6 @@ public class CUBRIDDialect extends Dialect {
 
 	@Override
 	public String getDual() {
-		//TODO: is this really needed?
-		//TODO: would "from table({0})" be better?
 		return "db_root";
 	}
 
