@@ -2973,6 +2973,7 @@ public class HQLTest {
 	}
 
 	@Test
+	@RequiresDialectFeature(feature = DialectFeatureChecks.SupportsFetchClausePercent.class)
 	public void test_hql_bad_fetch_first_example(SessionFactoryScope factoryScope) {
 		factoryScope.inTransaction( entityManager -> {
 			List<Phone> wrongCalls = entityManager.createQuery(
