@@ -93,6 +93,7 @@ import static org.hibernate.type.SqlTypes.FLOAT;
 import static org.hibernate.type.SqlTypes.REAL;
 import static org.hibernate.type.SqlTypes.BLOB;
 import static org.hibernate.type.SqlTypes.BOOLEAN;
+import static org.hibernate.type.SqlTypes.NCLOB;
 import static org.hibernate.type.SqlTypes.TIME;
 import static org.hibernate.type.SqlTypes.TIMESTAMP;
 import static org.hibernate.type.SqlTypes.TIMESTAMP_WITH_TIMEZONE;
@@ -140,6 +141,8 @@ public class CUBRIDDialect extends Dialect {
 			//(always 3, millisecond precision)
 			case TIMESTAMP -> "datetime";
 			case TIME_WITH_TIMEZONE, TIMESTAMP_WITH_TIMEZONE -> "datetimetz";
+			// CUBRID has no national CLOB, so map NCLOB (and LONG32NVARCHAR, which resolves via NCLOB) to CLOB
+			case NCLOB -> "clob";
 			default -> super.columnType( sqlTypeCode );
 		};
 	}
