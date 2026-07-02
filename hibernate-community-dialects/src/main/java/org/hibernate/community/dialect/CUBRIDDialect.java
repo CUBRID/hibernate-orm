@@ -1068,4 +1068,10 @@ public class CUBRIDDialect extends Dialect {
 		return false;
 	}
 
+	@Override
+	public int getInExpressionCountLimit() {
+		// bound multi-key batch size (limit / key columns) under CUBRID's ~400 expression-nesting limit
+		return 500;
+	}
+
 }
