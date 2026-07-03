@@ -2336,8 +2336,16 @@ public abstract class AbstractSqlAstTranslator<T extends JdbcOperation> implemen
 		clauseStack.pop();
 	}
 
+	private boolean isReservedWord(String name) {
+		return name != null && dialect.getKeywords().contains( name.toLowerCase( java.util.Locale.ROOT ) );
+	}
+
+	private String quoteCteIdentifierIfKeyword(String name) {
+		return isReservedWord( name ) ? dialect.openQuote() + name + dialect.closeQuote() : name;
+	}
+
 	private void visitCteStatement(CteStatement cte) {
-		appendSql( cte.getCteTable().getTableExpression() );
+		appendSql( quoteCteIdentifierIfKeyword( cte.getCteTable().getTableExpression() ) );
 		if ( dialect.supportsCteHeaderColumnList() ) {
 			appendSql( " (" );
 			renderCteColumns( cte );
@@ -2422,7 +2430,7 @@ public abstract class AbstractSqlAstTranslator<T extends JdbcOperation> implemen
 			else {
 				appendSql( COMMA_SEPARATOR );
 			}
-			appendSql( columnName );
+			appendSql( quoteCteIdentifierIfKeyword( columnName ) );
 		}
 	}
 
@@ -2442,6 +2450,9 @@ public abstract class AbstractSqlAstTranslator<T extends JdbcOperation> implemen
 				continue;
 			}
 			if ( cte.getCyclePathColumn() != null && name.equals( cte.getCyclePathColumn().getColumnExpression() ) ) {
+				continue;
+			}
+			if ( isReservedWord( name ) ) {
 				continue;
 			}
 
@@ -2469,6 +2480,9 @@ public abstract class AbstractSqlAstTranslator<T extends JdbcOperation> implemen
 			}
 			if ( cte.getCycleMarkColumn() != null
 					&& name.equals( cte.getCycleMarkColumn().getColumnExpression() ) ) {
+				continue;
+			}
+			if ( isReservedWord( name ) ) {
 				continue;
 			}
 
@@ -6335,7 +6349,16 @@ public abstract class AbstractSqlAstTranslator<T extends JdbcOperation> implemen
 
 	protected boolean renderNamedTableReference(
 			NamedTableReference tableReference, LockMode lockMode) {
-		appendSql( tableReference.getTableExpression() );
+		final String tableExpression = tableReference.getTableExpression();
+		// a CTE name skips the normal identifier quoting, so quote it here if it is a reserved word
+		if ( isReservedWord( tableExpression ) && getCteStatement( tableReference.getTableId() ) != null ) {
+			appendSql( dialect.openQuote() );
+			appendSql( tableExpression );
+			appendSql( dialect.closeQuote() );
+		}
+		else {
+			appendSql( tableExpression );
+		}
 		registerAffectedTable( tableReference );
 		if ( renderAsOfClause( tableReference ) ) {
 			appendSql( WHITESPACE );
