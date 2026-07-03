@@ -65,6 +65,7 @@ import org.hibernate.boot.models.spi.NamedNativeQueryRegistration;
 import org.hibernate.boot.models.spi.NamedQueryRegistration;
 import org.hibernate.boot.models.spi.NamedStatementRegistration;
 import org.hibernate.boot.models.spi.NamedStoredProcedureQueryRegistration;
+import org.hibernate.boot.models.spi.PersistenceUnitLifecycleEventHandler;
 import org.hibernate.boot.models.spi.SequenceGeneratorRegistration;
 import org.hibernate.boot.models.spi.SqlResultSetMappingRegistration;
 import org.hibernate.boot.models.spi.TableGeneratorRegistration;
@@ -139,6 +140,7 @@ public class GlobalRegistrationsImpl implements GlobalRegistrations, GlobalRegis
 
 	private List<LifecycleEventHandler> lifecycleEventHandlers;
 	private Map<ClassDetails, List<LifecycleEventHandler>> targetedLifecycleEventHandlers;
+	private List<PersistenceUnitLifecycleEventHandler> persistenceUnitLifecycleEventHandlers;
 	private List<ConversionRegistration> converterRegistrations;
 	private List<JavaTypeRegistration> javaTypeRegistrations;
 	private List<JdbcTypeRegistration> jdbcTypeRegistrations;
@@ -183,6 +185,11 @@ public class GlobalRegistrationsImpl implements GlobalRegistrations, GlobalRegis
 	@Override
 	public Map<ClassDetails, List<LifecycleEventHandler>> getTargetedEntityListenerRegistrations() {
 		return targetedLifecycleEventHandlers == null ? emptyMap() : targetedLifecycleEventHandlers;
+	}
+
+	@Override
+	public List<PersistenceUnitLifecycleEventHandler> getPersistenceUnitLifecycleEventHandlers() {
+		return persistenceUnitLifecycleEventHandlers == null ? emptyList() : persistenceUnitLifecycleEventHandlers;
 	}
 
 	@Override
@@ -699,13 +706,31 @@ public class GlobalRegistrationsImpl implements GlobalRegistrations, GlobalRegis
 
 	public void collectEntityListenerRegistrations(List<JaxbEntityListenerImpl> listeners, ModelsContext modelsContext) {
 		final var classDetailsRegistry = getClassDetailsRegistry();
-		listeners.forEach( jaxbEntityListener ->
-				addJpaEventListener( LifecycleEventHandler.from(
+		listeners.forEach( jaxbEntityListener -> {
+			final var listenerClassDetails =
+					classDetailsRegistry.resolveClassDetails( jaxbEntityListener.getClazz() );
+			final var lifecycleEventHandler = LifecycleEventHandler.from(
 						JpaEventListenerStyle.LISTENER,
-						classDetailsRegistry.resolveClassDetails( jaxbEntityListener.getClazz() ),
+						listenerClassDetails,
 						jaxbEntityListener,
-						modelsContext
-				) ) );
+						modelsContext,
+						LifecycleEventHandler.hasExplicitXmlCallbackMappings( jaxbEntityListener )
+			);
+			final var persistenceUnitLifecycleEventHandler =
+					PersistenceUnitLifecycleEventHandler.from( listenerClassDetails, jaxbEntityListener );
+
+			if ( lifecycleEventHandler.hasCallbackMethods() ) {
+				addJpaEventListener( lifecycleEventHandler );
+			}
+			if ( persistenceUnitLifecycleEventHandler.hasCallbackMethods() ) {
+				addPersistenceUnitLifecycleEventHandler( persistenceUnitLifecycleEventHandler );
+			}
+			if ( !lifecycleEventHandler.hasCallbackMethods()
+					&& !persistenceUnitLifecycleEventHandler.hasCallbackMethods() ) {
+				throw new ModelsException( "Mapping for entity listener specified no callback methods: "
+						+ listenerClassDetails.getClassName() );
+			}
+		} );
 	}
 
 	public void addJpaEventListener(LifecycleEventHandler listener) {
@@ -717,6 +742,11 @@ public class GlobalRegistrationsImpl implements GlobalRegistrations, GlobalRegis
 	}
 
 	public void addTargetedJpaEventListener(ClassDetails listenerClassDetails) {
+		final var persistenceUnitHandler = PersistenceUnitLifecycleEventHandler.from( listenerClassDetails );
+		if ( persistenceUnitHandler.hasCallbackMethods() ) {
+			addPersistenceUnitLifecycleEventHandler( persistenceUnitHandler );
+		}
+
 		final Map<ClassDetails, TargetedLifecycleEventHandlerBuilder> builders = new LinkedHashMap<>();
 		listenerClassDetails.forEachMethod( (index, methodDetails) -> {
 			applyTargetedCallback( listenerClassDetails, methodDetails, PrePersist.class, CallbackType.PRE_PERSIST, builders );
@@ -735,15 +765,23 @@ public class GlobalRegistrationsImpl implements GlobalRegistrations, GlobalRegis
 			applyTargetedCallback( listenerClassDetails, methodDetails, PostLoad.class, CallbackType.POST_LOAD, builders );
 		} );
 
-		if ( builders.isEmpty() ) {
-			throw new ModelsException( "Mapping for entity-listener specified no callback methods - "
-					+ listenerClassDetails.getClassName() );
+		if ( builders.isEmpty() && !persistenceUnitHandler.hasCallbackMethods() ) {
+			throw new ModelsException( "Mapping for entity listener specified no callback methods: "
+										+ listenerClassDetails.getClassName() );
 		}
 
 		builders.forEach( (targetClass, builder) -> addTargetedJpaEventListener(
 				targetClass,
 				builder.build( JpaEventListenerStyle.LISTENER, listenerClassDetails )
 		) );
+	}
+
+	private void addPersistenceUnitLifecycleEventHandler(PersistenceUnitLifecycleEventHandler listener) {
+		if ( persistenceUnitLifecycleEventHandlers == null ) {
+			persistenceUnitLifecycleEventHandlers = new ArrayList<>();
+		}
+
+		persistenceUnitLifecycleEventHandlers.add( listener );
 	}
 
 	private void addTargetedJpaEventListener(ClassDetails targetClass, LifecycleEventHandler listener) {
@@ -762,10 +800,10 @@ public class GlobalRegistrationsImpl implements GlobalRegistrations, GlobalRegis
 			Map<ClassDetails, TargetedLifecycleEventHandlerBuilder> builders) {
 		if ( methodDetails.hasDirectAnnotationUsage( callbackAnnotation ) ) {
 			if ( !LifecycleEventHandler.matchesSignature( JpaEventListenerStyle.LISTENER, methodDetails ) ) {
-				throw new ModelsException( "Callback methods annotated for "
-						+ callbackAnnotation.getName() + " in "
+				throw new ModelsException( "Callback method annotated '@"
+						+ callbackAnnotation.getSimpleName() + "' in '"
 						+ listenerClassDetails.getClassName()
-						+ " must return void and take one argument: " + methodDetails );
+						+ "' must return void and accept one argument: " + methodDetails );
 			}
 
 			builders.computeIfAbsent( methodDetails.getArgumentTypes().get( 0 ),

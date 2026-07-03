@@ -130,8 +130,19 @@ public class LifecycleEventHandler {
 			ClassDetails listenerClassDetails,
 			JaxbEntityListenerImpl jaxbMapping,
 			ModelsContext modelsContext) {
+		return from( consumerType, listenerClassDetails, jaxbMapping, modelsContext, true );
+	}
+
+	/// Create a handler from XML representation of a [callback][JpaEventListenerStyle#CALLBACK]
+	/// or [listener][JpaEventListenerStyle#LISTENER].
+	public static LifecycleEventHandler from(
+			JpaEventListenerStyle consumerType,
+			ClassDetails listenerClassDetails,
+			JaxbEntityListenerImpl jaxbMapping,
+			ModelsContext modelsContext,
+			boolean errorIfEmpty) {
 		if ( isImplicitMethodMappings( jaxbMapping ) ) {
-			return from( consumerType, listenerClassDetails );
+			return from( consumerType, listenerClassDetails, errorIfEmpty );
 		}
 
 		final EnumMap<CallbackType, MethodDetails> callbackMethods = new EnumMap<>( CallbackType.class );
@@ -226,8 +237,14 @@ public class LifecycleEventHandler {
 
 		final LifecycleEventHandler descriptor =
 				new LifecycleEventHandler( consumerType, listenerClassDetails, callbackMethods );
-		errorIfEmpty( descriptor );
+		if ( errorIfEmpty ) {
+			errorIfEmpty( descriptor );
+		}
 		return descriptor;
+	}
+
+	public static boolean hasExplicitXmlCallbackMappings(JaxbEntityListenerImpl jaxbMapping) {
+		return !isImplicitMethodMappings( jaxbMapping );
 	}
 
 	private static <A extends Annotation> void applyXmlCallback(
@@ -564,9 +581,10 @@ public class LifecycleEventHandler {
 			List<LifecycleEventHandler> descriptors) {
 		if ( methodDetails.hasDirectAnnotationUsage( callbackAnnotation ) ) {
 			if ( !matchesSignature( JpaEventListenerStyle.LISTENER, methodDetails ) ) {
-				throw new ModelsException( "Callback methods annotated for "
-						+ callbackAnnotation.getName() + " in "
-						+ listenerClassDetails.getClassName()
+				throw new ModelsException( "Callback method '"
+						+ methodDetails.getName() + "' annotated '@"
+						+ callbackAnnotation.getSimpleName() + "' in '"
+						+ listenerClassDetails.getClassName() + "'"
 						+ signatureRequirement( JpaEventListenerStyle.LISTENER )
 						+ ": " + methodDetails );
 			}
@@ -660,15 +678,15 @@ public class LifecycleEventHandler {
 			Map<CallbackType, MethodDetails> callbackMethods,
 			String source) {
 		if ( !matchesSignature( consumerType, methodDetails ) ) {
-			throw new ModelsException( "Callback methods " + source + " for "
-					+ callbackAnnotation.getName() + " in "
-					+ listenerClassDetails.getClassName()
-					+ signatureRequirement( consumerType )
-					+ ": " + methodDetails );
+			throw new ModelsException( "Callback method '"
+					+ methodDetails.getName() + "' " + source + " '@"
+					+ callbackAnnotation.getSimpleName() + "' in '"
+					+ listenerClassDetails.getClassName() + "'"
+					+ signatureRequirement( consumerType ) );
 		}
 		if ( callbackMethods.containsKey( callbackType ) ) {
-			throw new ModelsException( "You can only " + source + " one callback method for "
-					+ callbackAnnotation.getName() + " in callback class: "
+			throw new ModelsException( "Duplicate callback method " + source  + " '@"
+					+ callbackAnnotation.getSimpleName() + "' in listener class "
 					+ listenerClassDetails.getClassName() );
 		}
 		callbackMethods.put( callbackType, methodDetails );
