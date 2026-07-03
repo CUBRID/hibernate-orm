@@ -11,6 +11,7 @@ import jakarta.persistence.TypedQuery;
 import org.hibernate.CacheMode;
 import org.hibernate.ScrollableResults;
 import org.hibernate.Session;
+import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.community.dialect.DerbyDialect;
 import org.hibernate.community.dialect.FirebirdDialect;
 import org.hibernate.community.dialect.InformixDialect;
@@ -1483,6 +1484,7 @@ public class HQLTest {
 	@SkipForDialect(dialectClass = SybaseASEDialect.class)
 	@SkipForDialect(dialectClass = FirebirdDialect.class, reason = "order by not supported in list")
 	@SkipForDialect(dialectClass = InformixDialect.class)
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support WITHIN GROUP")
 	public void test_hql_aggregate_functions_within_group_example(SessionFactoryScope factoryScope) {
 		factoryScope.inTransaction( entityManager -> {
 			//tag::hql-aggregate-functions-within-group-example[]
