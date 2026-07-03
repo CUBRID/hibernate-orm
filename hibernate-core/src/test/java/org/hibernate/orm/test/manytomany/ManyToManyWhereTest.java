@@ -15,6 +15,8 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import org.hibernate.testing.orm.junit.SkipForDialect;
+import org.hibernate.community.dialect.CUBRIDDialect;
 
 /**
  * Verifies that @ManyToMany relationships with a @Where clause properly
@@ -32,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 		}
 )
 @SessionFactory
+@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support parenthesized (nested) join groups")
 public class ManyToManyWhereTest {
 
 	@Test

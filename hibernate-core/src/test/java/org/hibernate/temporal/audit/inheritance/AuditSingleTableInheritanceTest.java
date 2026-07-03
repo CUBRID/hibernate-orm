@@ -34,6 +34,8 @@ import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.TestMethodOrder;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import org.hibernate.testing.orm.junit.SkipForDialect;
+import org.hibernate.community.dialect.CUBRIDDialect;
 
 /**
  * Tests @Audited with SINGLE_TABLE inheritance.
@@ -52,6 +54,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 		value = "org.hibernate.temporal.audit.inheritance.AuditSingleTableInheritanceTest$TxIdSupplier"))
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support the subquery-in-join SQL emitted for audit queries")
 class AuditSingleTableInheritanceTest {
 	private static int currentTxId;
 

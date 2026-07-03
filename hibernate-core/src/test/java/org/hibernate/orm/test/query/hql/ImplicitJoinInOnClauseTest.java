@@ -15,6 +15,8 @@ import org.junit.jupiter.api.Test;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.ManyToOne;
+import org.hibernate.testing.orm.junit.SkipForDialect;
+import org.hibernate.community.dialect.CUBRIDDialect;
 
 /**
  * @author Christian Beikov
@@ -29,6 +31,7 @@ import jakarta.persistence.ManyToOne;
 })
 @SessionFactory
 @JiraKey( "HHH-17033" )
+@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support parenthesized (nested) join groups")
 public class ImplicitJoinInOnClauseTest {
 
 	@Test

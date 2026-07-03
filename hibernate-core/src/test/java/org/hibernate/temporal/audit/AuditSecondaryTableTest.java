@@ -27,6 +27,8 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import org.hibernate.testing.orm.junit.SkipForDialect;
+import org.hibernate.community.dialect.CUBRIDDialect;
 
 @AuditedTest
 @SessionFactory
@@ -36,6 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 })
 @ServiceRegistry(settings = @Setting(name = StateManagementSettings.CHANGESET_ID_SUPPLIER,
 		value = "org.hibernate.temporal.audit.AuditSecondaryTableTest$TxIdSupplier"))
+@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support the subquery-in-join SQL emitted for audit queries")
 class AuditSecondaryTableTest {
 	private static int currentTxId;
 

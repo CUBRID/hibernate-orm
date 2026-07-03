@@ -24,6 +24,8 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import org.hibernate.testing.orm.junit.SkipForDialect;
+import org.hibernate.community.dialect.CUBRIDDialect;
 
 /**
  * @author Marco Belladelli
@@ -39,6 +41,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 } )
 @Jira( "https://hibernate.atlassian.net/browse/HHH-16574" )
 @Jira( "https://hibernate.atlassian.net/browse/HHH-18745" )
+@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support parenthesized (nested) join groups")
 public class JoinedInheritanceTreatQueryTest {
 	@BeforeEach
 	public void setUp(SessionFactoryScope scope) {

@@ -25,6 +25,8 @@ import org.junit.jupiter.api.Test;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import org.hibernate.testing.orm.junit.SkipForDialect;
+import org.hibernate.community.dialect.CUBRIDDialect;
 
 /**
  * Implementation of WithClauseTest.
@@ -39,6 +41,7 @@ import java.util.Set;
 		}
 )
 @SessionFactory
+@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support parenthesized (nested) join groups")
 public class WithClauseJoinRewriteTest {
 
 	@Test

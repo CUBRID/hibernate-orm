@@ -25,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
+import org.hibernate.community.dialect.CUBRIDDialect;
 
 /**
  * Implementation of WithClauseTest.
@@ -38,6 +39,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 		}
 )
 @SessionFactory
+@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support parenthesized (nested) join groups")
 public class WithClauseTest {
 	private final TestData data = new TestData();
 

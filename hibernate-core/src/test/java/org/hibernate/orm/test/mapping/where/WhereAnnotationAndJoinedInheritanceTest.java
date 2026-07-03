@@ -27,6 +27,8 @@ import jakarta.persistence.criteria.CriteriaQuery;
 import jakarta.persistence.criteria.Root;
 
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
+import org.hibernate.testing.orm.junit.SkipForDialect;
+import org.hibernate.community.dialect.CUBRIDDialect;
 
 @Jpa(
 		annotatedClasses = {
@@ -36,6 +38,7 @@ import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 		}
 )
 @Jira("HHH-16967")
+@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support parenthesized (nested) join groups")
 public class WhereAnnotationAndJoinedInheritanceTest {
 
 	private final static String PRIMARY_OBJECT_WITH_DELETED_CHILD = "with deleted child";
