@@ -10,6 +10,7 @@ import org.hibernate.HibernateException;
 import org.hibernate.JDBCException;
 import org.hibernate.QueryException;
 import org.hibernate.community.dialect.AltibaseDialect;
+import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.community.dialect.FirebirdDialect;
 import org.hibernate.community.dialect.InformixDialect;
 import org.hibernate.dialect.SpannerPostgreSQLDialect;
@@ -2351,6 +2352,7 @@ public class FunctionTests {
 
 	@Test
 	@RequiresDialectFeature(feature = DialectFeatureChecks.SupportsExtractDayOfWeekYearMonth.class)
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support the week field in extract()")
 	public void testExtractWeekWithAssertions(SessionFactoryScope scope) {
 		scope.inTransaction(
 				session -> {
