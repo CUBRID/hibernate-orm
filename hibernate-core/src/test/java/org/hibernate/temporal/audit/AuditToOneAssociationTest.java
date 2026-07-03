@@ -32,6 +32,8 @@ import org.junit.jupiter.api.TestMethodOrder;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import org.hibernate.testing.orm.junit.SkipForDialect;
+import org.hibernate.community.dialect.CUBRIDDialect;
 
 /**
  * Tests @Audited with @ManyToOne and @OneToOne associations.
@@ -50,6 +52,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 		value = "org.hibernate.temporal.audit.AuditToOneAssociationTest$TxIdSupplier"))
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support the subquery-in-join SQL emitted for audit queries")
 class AuditToOneAssociationTest {
 	private static int currentTxId;
 

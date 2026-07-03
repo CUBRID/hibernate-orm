@@ -33,6 +33,8 @@ import jakarta.persistence.Table;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import org.hibernate.testing.orm.junit.SkipForDialect;
+import org.hibernate.community.dialect.CUBRIDDialect;
 
 /**
  * Exercises the full {@link Audited @Audited} lifecycle using only
@@ -51,6 +53,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 })
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support the subquery-in-join SQL emitted for audit queries")
 class AuditStatelessSessionTest {
 
 	@Changelog(listener = RevInfoListener.class)

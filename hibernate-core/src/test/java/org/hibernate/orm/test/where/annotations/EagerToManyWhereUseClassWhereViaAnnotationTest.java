@@ -30,6 +30,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.hibernate.testing.orm.junit.SkipForDialect;
+import org.hibernate.community.dialect.CUBRIDDialect;
 
 /**
  * Tests association collections with AvailableSettings.USE_ENTITY_WHERE_CLAUSE_FOR_COLLECTIONS = true
@@ -42,6 +44,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 		EagerToManyWhereUseClassWhereViaAnnotationTest.Category.class
 })
 @SessionFactory
+@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support parenthesized (nested) join groups")
 public class EagerToManyWhereUseClassWhereViaAnnotationTest {
 	@AfterEach
 	void dropTestData(SessionFactoryScope factoryScope) {

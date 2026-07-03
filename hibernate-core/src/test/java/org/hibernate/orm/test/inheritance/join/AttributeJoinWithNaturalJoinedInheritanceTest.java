@@ -28,6 +28,8 @@ import jakarta.persistence.Tuple;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import org.hibernate.testing.orm.junit.SkipForDialect;
+import org.hibernate.community.dialect.CUBRIDDialect;
 
 @DomainModel( annotatedClasses = {
 		AttributeJoinWithNaturalJoinedInheritanceTest.BaseClass.class,
@@ -39,6 +41,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 } )
 @SessionFactory
 @Jira( "https://hibernate.atlassian.net/browse/HHH-17646" )
+@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support parenthesized (nested) join groups")
 public class AttributeJoinWithNaturalJoinedInheritanceTest {
 	@AfterEach
 	public void cleanup(SessionFactoryScope scope) {

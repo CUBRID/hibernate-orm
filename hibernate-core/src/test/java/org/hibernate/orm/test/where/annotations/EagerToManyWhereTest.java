@@ -30,6 +30,8 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import org.hibernate.testing.orm.junit.SkipForDialect;
+import org.hibernate.community.dialect.CUBRIDDialect;
 
 /**
  * Tests association collections with default AvailableSettings.USE_ENTITY_WHERE_CLAUSE_FOR_COLLECTIONS,
@@ -40,6 +42,7 @@ import static org.junit.Assert.assertTrue;
 @SuppressWarnings("JUnitMalformedDeclaration")
 @DomainModel(annotatedClasses = { EagerToManyWhereTest.Product.class, EagerToManyWhereTest.Category.class })
 @SessionFactory
+@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support parenthesized (nested) join groups")
 public class EagerToManyWhereTest {
 	@AfterEach
 	void dropTestData(SessionFactoryScope factoryScope) {

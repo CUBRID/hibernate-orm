@@ -27,6 +27,8 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import org.hibernate.testing.orm.junit.SkipForDialect;
+import org.hibernate.community.dialect.CUBRIDDialect;
 
 @SuppressWarnings("JUnitMalformedDeclaration")
 @DomainModel( annotatedClasses = {
@@ -42,6 +44,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 		ManyToManyTreatJoinTest.UnionSub2.class,
 } )
 @SessionFactory( useCollectingStatementInspector = true )
+@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support parenthesized (nested) join groups")
 public class ManyToManyTreatJoinTest {
 	@BeforeEach
 	public void setUp(SessionFactoryScope scope) {

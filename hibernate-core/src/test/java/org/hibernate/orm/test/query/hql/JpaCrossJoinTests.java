@@ -20,6 +20,7 @@ import org.hibernate.testing.orm.junit.SkipForDialect;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import org.hibernate.community.dialect.CUBRIDDialect;
 
 /**
  * Here, {@value AvailableSettings#JPA_QUERY_COMPLIANCE} should force the translation
@@ -37,6 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 		reason = "Sybase Adaptive Server does not support SQL cross-joins; this query resorts to " +
 				"multiple roots at the SQL level and so the cross reference is invalid"
 )
+@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support parenthesized (nested) join groups")
 public class JpaCrossJoinTests {
 	@Test
 	public void testCrossJoin(SessionFactoryScope scope) {

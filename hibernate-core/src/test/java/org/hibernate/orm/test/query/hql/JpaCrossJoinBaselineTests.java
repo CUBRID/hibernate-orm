@@ -12,12 +12,15 @@ import org.hibernate.testing.orm.junit.SessionFactoryScope;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.fail;
+import org.hibernate.testing.orm.junit.SkipForDialect;
+import org.hibernate.community.dialect.CUBRIDDialect;
 
 /**
  * @author Steve Ebersole
  */
 @DomainModel( standardModels = StandardDomainModel.RETAIL )
 @SessionFactory( useCollectingStatementInspector = true )
+@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support parenthesized (nested) join groups")
 public class JpaCrossJoinBaselineTests {
 	@Test
 	public void testCrossJoin(SessionFactoryScope scope) {
