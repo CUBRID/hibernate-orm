@@ -67,6 +67,7 @@ import org.hibernate.tool.schema.extract.spi.SequenceInformationExtractor;
 import org.hibernate.type.StandardBasicTypes;
 import org.hibernate.type.descriptor.jdbc.BlobJdbcType;
 import org.hibernate.type.descriptor.jdbc.ClobJdbcType;
+import org.hibernate.type.descriptor.java.JavaType;
 import org.hibernate.type.descriptor.jdbc.JdbcType;
 import org.hibernate.type.descriptor.jdbc.VarcharJdbcType;
 import org.hibernate.type.descriptor.jdbc.spi.JdbcTypeRegistry;
@@ -391,6 +392,27 @@ public class CUBRIDDialect extends Dialect {
 	public int getMaxVarbinaryLength() {
 		//note that the length of BIT VARYING in CUBRID is actually in bits
 		return 1_073_741_823;
+	}
+
+	@Override
+	public SizeStrategy getSizeStrategy() {
+		return new SizeStrategyImpl() {
+			@Override
+			public Size resolveSize(
+					JdbcType jdbcType,
+					JavaType<?> javaType,
+					Integer precision,
+					Integer scale,
+					Long length) {
+				final Size size = super.resolveSize( jdbcType, javaType, precision, scale, length );
+				// CUBRID measures 'bit'/'bit varying' length in bits, so scale the byte length up to bits
+				final int ddlTypeCode = jdbcType.getDdlTypeCode();
+				if ( ( ddlTypeCode == BINARY || ddlTypeCode == VARBINARY ) && size.getLength() != null ) {
+					size.setLength( size.getLength() * 8 );
+				}
+				return size;
+			}
+		};
 	}
 
 	@Override
