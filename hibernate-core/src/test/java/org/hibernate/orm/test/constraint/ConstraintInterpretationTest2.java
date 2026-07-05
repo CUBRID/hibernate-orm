@@ -21,8 +21,10 @@ import org.hibernate.dialect.CockroachDialect;
 import org.hibernate.dialect.DB2Dialect;
 import org.hibernate.dialect.HANADialect;
 import org.hibernate.exception.ConstraintViolationException;
+import org.hibernate.testing.orm.junit.DialectFeatureChecks;
 import org.hibernate.testing.orm.junit.EntityManagerFactoryScope;
 import org.hibernate.testing.orm.junit.Jpa;
+import org.hibernate.testing.orm.junit.RequiresDialectFeature;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -93,7 +95,9 @@ public class ConstraintInterpretationTest2 {
 		} );
 	}
 
-	@Test void testCheck(EntityManagerFactoryScope scope) {
+	@Test
+	@RequiresDialectFeature(feature = DialectFeatureChecks.SupportsTableCheck.class, comment = "CUBRID does not enforce CHECK constraints")
+	void testCheck(EntityManagerFactoryScope scope) {
 		scope.inTransaction( em -> {
 			try {
 				em.createNativeQuery( "insert into table_1 (id, name, ssn) values (1, ' ', 'abc123')" ).executeUpdate();
