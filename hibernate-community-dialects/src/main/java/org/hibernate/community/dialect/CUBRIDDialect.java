@@ -724,6 +724,13 @@ public class CUBRIDDialect extends Dialect {
 	}
 
 	@Override
+	public String currentTimestamp() {
+		//current_timestamp is a second-precision TIMESTAMP; sys_datetime is a millisecond-precision
+		//DATETIME, matching how TIMESTAMP columns are mapped (datetime)
+		return "sys_datetime";
+	}
+
+	@Override
 	public String getCurrentTimestampSelectString() {
 		return "select now()";
 	}
