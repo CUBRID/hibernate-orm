@@ -48,6 +48,7 @@ import org.hibernate.engine.jdbc.env.spi.IdentifierHelperBuilder;
 import org.hibernate.engine.jdbc.env.spi.NameQualifierSupport;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.exception.ConstraintViolationException;
+import org.hibernate.exception.SQLGrammarException;
 import org.hibernate.exception.spi.SQLExceptionConversionDelegate;
 import org.hibernate.exception.spi.TemplatedViolatedConstraintNameExtractor;
 import org.hibernate.exception.spi.ViolatedConstraintNameExtractor;
@@ -499,6 +500,7 @@ public class CUBRIDDialect extends Dialect {
 			case -631, -225 -> new ConstraintViolationException( message, sqlException, sql,
 					ConstraintViolationException.ConstraintKind.NOT_NULL,
 					getViolatedConstraintNameExtractor().extractConstraintName( sqlException ) );
+			case -493 -> new SQLGrammarException( message, sqlException, sql );
 			default -> null;
 		};
 	}
