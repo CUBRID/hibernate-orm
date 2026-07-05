@@ -6,11 +6,13 @@ package org.hibernate.orm.test.jpa.ql;
 
 import java.util.Set;
 
+import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.testing.jdbc.SQLStatementInspector;
 import org.hibernate.testing.orm.junit.DomainModel;
 import org.hibernate.testing.orm.junit.JiraKey;
 import org.hibernate.testing.orm.junit.SessionFactory;
 import org.hibernate.testing.orm.junit.SessionFactoryScope;
+import org.hibernate.testing.orm.junit.SkipForDialect;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -118,6 +120,7 @@ public class JoinTableOptimizationTest {
 
 	@Test
 	@JiraKey("HHH-16691")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID's parser rejects the parenthesized nested join group Hibernate renders here")
 	public void testLeftJoinCustomOnClause(SessionFactoryScope scope) {
 		SQLStatementInspector statementInspector = scope.getCollectingStatementInspector();
 		statementInspector.clear();

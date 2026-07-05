@@ -6,10 +6,12 @@ package org.hibernate.orm.test.query.hhh12076;
 
 import java.util.List;
 
+import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.testing.orm.junit.JiraKey;
 import org.hibernate.testing.orm.junit.DomainModel;
 import org.hibernate.testing.orm.junit.SessionFactory;
 import org.hibernate.testing.orm.junit.SessionFactoryScope;
+import org.hibernate.testing.orm.junit.SkipForDialect;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -67,6 +69,7 @@ public class HbmMappingJoinClassTest {
 	}
 
 	@Test
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID's parser rejects the parenthesized nested join group Hibernate renders here")
 	public void testClassExpressionInOnClause(SessionFactoryScope scope) {
 		scope.inTransaction( session -> {
 			List<SettlementTask> results = session.createQuery(
