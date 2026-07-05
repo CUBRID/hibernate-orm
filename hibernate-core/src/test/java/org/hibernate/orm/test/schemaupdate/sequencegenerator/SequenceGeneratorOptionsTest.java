@@ -78,8 +78,12 @@ public class SequenceGeneratorOptionsTest {
 			String statement = fileContent[i].toUpperCase( Locale.ROOT );
 			if ( dialect.getSequenceSupport().supportsSequences() ) {
 				String upperSequenceName = sequenceName.toUpperCase( Locale.ROOT );
+				// also accept the dialect's own create-sequence keyword (e.g. CUBRID emits 'create serial')
+				final String createSequence = dialect.getSequenceSupport()
+						.getCreateSequenceString( sequenceName ).toUpperCase( Locale.ROOT );
 				if ( statement.contains( "CREATE SEQUENCE " + upperSequenceName )
-						|| statement.contains( "CREATE SEQUENCE IF NOT EXISTS " + upperSequenceName ) ) {
+						|| statement.contains( "CREATE SEQUENCE IF NOT EXISTS " + upperSequenceName )
+						|| statement.contains( createSequence ) ) {
 					if ( statement.contains( options.toUpperCase( Locale.ROOT ) ) ) {
 						return true;
 					}

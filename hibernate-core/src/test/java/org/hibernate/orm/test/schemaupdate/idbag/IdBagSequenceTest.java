@@ -52,6 +52,11 @@ public class IdBagSequenceTest {
 				.execute( EnumSet.of( TargetType.SCRIPT ), metadata );
 
 		String fileContent = new String( Files.readAllBytes( scriptFile.toPath() ) );
-		MatcherAssert.assertThat( fileContent.toLowerCase().contains( "create sequence seq_child_id" ) || fileContent.toLowerCase().contains( "create sequence if not exists seq_child_id" ), is( true ) );
+		// also accept the dialect's own create-sequence keyword (e.g. CUBRID emits 'create serial')
+		final String createSequence = metadata.getDatabase().getDialect().getSequenceSupport()
+				.getCreateSequenceString( "seq_child_id" ).toLowerCase();
+		MatcherAssert.assertThat( fileContent.toLowerCase().contains( "create sequence seq_child_id" )
+				|| fileContent.toLowerCase().contains( "create sequence if not exists seq_child_id" )
+				|| fileContent.toLowerCase().contains( createSequence ), is( true ) );
 	}
 }
