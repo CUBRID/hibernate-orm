@@ -7,6 +7,7 @@ package org.hibernate.orm.test.filter;
 import jakarta.persistence.criteria.JoinType;
 import org.hibernate.Hibernate;
 import org.hibernate.cache.spi.entry.CollectionCacheEntry;
+import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.dialect.SpannerDialect;
 import org.hibernate.mapping.Collection;
 import org.hibernate.mapping.PersistentClass;
@@ -748,6 +749,7 @@ public class DynamicFilterTest {
 	}
 
 	@Test
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID's parser rejects the parenthesized nested join group Hibernate renders here")
 	public void testManyToManyFilterOnLoad(SessionFactoryScope factoryScope) {
 		var sessionFactory = factoryScope.getSessionFactory();
 		var stats = sessionFactory.getStatistics();

@@ -10,6 +10,7 @@ import java.sql.Types;
 import java.time.Instant;
 import java.util.List;
 
+import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.community.dialect.InformixDialect;
 import org.hibernate.dialect.SpannerPostgreSQLDialect;
 import org.hibernate.dialect.DB2Dialect;
@@ -315,6 +316,7 @@ public class NativeQueryResultBuilderTests {
 
 	@Test
 	@JiraKey("HHH-18629")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "DATA is a CUBRID reserved word, so the native query fails to parse")
 	public void testNativeQueryWithResultClass(SessionFactoryScope scope) {
 		scope.inTransaction(
 				session -> {

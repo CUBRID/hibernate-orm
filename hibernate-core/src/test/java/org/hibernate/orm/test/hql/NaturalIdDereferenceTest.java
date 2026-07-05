@@ -6,11 +6,13 @@ package org.hibernate.orm.test.hql;
 
 import org.hibernate.annotations.NaturalId;
 
+import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.testing.orm.junit.JiraKey;
 import org.hibernate.testing.jdbc.SQLStatementInspector;
 import org.hibernate.testing.orm.junit.DomainModel;
 import org.hibernate.testing.orm.junit.SessionFactory;
 import org.hibernate.testing.orm.junit.SessionFactoryScope;
+import org.hibernate.testing.orm.junit.SkipForDialect;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -238,6 +240,7 @@ public class NaturalIdDereferenceTest {
 	 * This results in three joins in total.
 	 */
 	@Test
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID's parser rejects the parenthesized nested join group Hibernate renders here")
 	public void dereferenceNaturalIdInJoin(SessionFactoryScope scope) {
 		SQLStatementInspector sqlStatementInterceptor = scope.getCollectingStatementInspector();
 		sqlStatementInterceptor.clear();
