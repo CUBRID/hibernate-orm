@@ -603,6 +603,161 @@ public class HbmTransformationJaxbTests {
 		} );
 	}
 
+	@Test
+	public void testComponentUpdateFalseTransformation(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/component-update-false/hbm.xml", scope, (transformed) -> {
+			assertThat( transformed.getEmbeddables() ).hasSize( 1 );
+
+			final JaxbEmbeddableImpl embeddable = transformed.getEmbeddables().get( 0 );
+			final JaxbBasicImpl nameAttr = embeddable.getAttributes().getBasicAttributes().stream()
+					.filter( b -> "name".equals( b.getName() ) )
+					.findFirst()
+					.orElseThrow();
+			assertThat( nameAttr.getColumn() )
+					.as( "Property with update=\"false\" should generate a column element" )
+					.isNotNull();
+			assertThat( nameAttr.getColumn().isUpdatable() )
+					.as( "Column should have updatable=false" )
+					.isFalse();
+
+			final JaxbBasicImpl descAttr = embeddable.getAttributes().getBasicAttributes().stream()
+					.filter( b -> "description".equals( b.getName() ) )
+					.findFirst()
+					.orElseThrow();
+			assertThat( descAttr.getColumn() )
+					.as( "Property with insert=\"false\" should generate a column element" )
+					.isNotNull();
+			assertThat( descAttr.getColumn().isInsertable() )
+					.as( "Column should have insertable=false" )
+					.isFalse();
+		} );
+	}
+
+	@Test
+	public void testUnionSubclassNoInheritedTransients(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/union-subclass-transient/hbm.xml", scope, (transformed) -> {
+			final JaxbEntityImpl employeeEntity = transformed.getEntities().stream()
+					.filter( e -> "Employee".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			for ( JaxbTransientImpl transientAttr : employeeEntity.getAttributes().getTransients() ) {
+				assertThat( transientAttr.getName() )
+						.as( "Subclass should not have transient for inherited property '%s'", transientAttr.getName() )
+						.isNotIn( "sex", "name", "id" );
+			}
+
+			final JaxbEntityImpl customerEntity = transformed.getEntities().stream()
+					.filter( e -> "Customer".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			for ( JaxbTransientImpl transientAttr : customerEntity.getAttributes().getTransients() ) {
+				assertThat( transientAttr.getName() )
+						.as( "Subclass should not have transient for inherited property '%s'", transientAttr.getName() )
+						.isNotIn( "sex", "name", "id" );
+			}
+		} );
+	}
+
+	@Test
+	public void testPropertyIndexTransformation(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/property-index/hbm.xml", scope, (transformed) -> {
+			final JaxbEntityImpl personEntity = transformed.getEntities().stream()
+					.filter( e -> "Person".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( personEntity.getTable() ).isNotNull();
+			assertThat( personEntity.getTable().getIndexes() )
+					.as( "Entity table should have indexes from property and many-to-one index attributes" )
+					.hasSizeGreaterThanOrEqualTo( 2 );
+
+			assertThat( personEntity.getTable().getIndexes() )
+					.anySatisfy( index -> {
+						assertThat( index.getName() ).isEqualTo( "person_name_index" );
+						assertThat( index.getColumnList() ).isEqualTo( "name" );
+					} );
+
+			assertThat( personEntity.getTable().getIndexes() )
+					.anySatisfy( index -> {
+						assertThat( index.getName() ).isEqualTo( "person_persongroup_index" );
+						assertThat( index.getColumnList() ).isEqualTo( "personGroup" );
+					} );
+		} );
+	}
+
+	@Test
+	public void testOneToOnePropertyRefTransformation(ServiceRegistryScope scope) {
+		transformAndVerifyMultiple(
+				new String[] { "xml/jaxb/mapping/one-to-one-property-ref/hbm.xml" },
+				scope,
+				(transformedRoots) -> {
+					final JaxbEntityMappingsImpl transformed = transformedRoots.get( 0 );
+					assertThat( transformed.getEntities() ).hasSize( 2 );
+
+					final JaxbEntityImpl personEntity = transformed.getEntities().stream()
+							.filter( e -> "Person".equals( e.getClazz() ) )
+							.findFirst()
+							.orElseThrow();
+
+					// Person.address one-to-one with property-ref should become mapped-by
+					assertThat( personEntity.getAttributes().getOneToOneAttributes() ).hasSize( 1 );
+					final JaxbOneToOneImpl address = personEntity.getAttributes().getOneToOneAttributes().get( 0 );
+					assertThat( address.getName() ).isEqualTo( "address" );
+					assertThat( address.getMappedBy() )
+							.as( "One-to-one with property-ref should generate mapped-by" )
+							.isEqualTo( "resident" );
+				}
+		);
+	}
+
+	@Test
+	public void testElementCollectionNotNullTransformation(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/element-not-null/hbm.xml", scope, (transformed) -> {
+			assertThat( transformed.getEntities() ).hasSize( 1 );
+
+			final JaxbEntityImpl entity = transformed.getEntities().get( 0 );
+			assertThat( entity.getAttributes().getElementCollectionAttributes() ).hasSize( 1 );
+
+			final var elementCollection = entity.getAttributes().getElementCollectionAttributes().get( 0 );
+			assertThat( elementCollection.getName() ).isEqualTo( "persons" );
+			assertThat( elementCollection.getColumn() )
+					.as( "Element collection should have a column element" )
+					.isNotNull();
+			assertThat( elementCollection.getColumn().isNullable() )
+					.as( "Element column with not-null='true' should have nullable=false" )
+					.isFalse();
+		} );
+	}
+
+	@Test
+	public void testSharedEmbeddableFormulaPropertyTransformation(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/shared-embeddable-formula/hbm.xml", scope, (transformed) -> {
+			final JaxbEntityImpl formulaUserEntity = transformed.getEntities().stream()
+					.filter( e -> "FormulaUser".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			final JaxbEmbeddedImpl userPerson = formulaUserEntity.getAttributes().getEmbeddedAttributes().get( 0 );
+			assertThat( userPerson.getName() ).isEqualTo( "person" );
+
+			final JaxbEntityImpl formulaEmployeeEntity = transformed.getEntities().stream()
+					.filter( e -> "FormulaEmployee".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			final JaxbEmbeddedImpl empPerson = formulaEmployeeEntity.getAttributes().getEmbeddedAttributes().get( 0 );
+			assertThat( empPerson.getName() ).isEqualTo( "person" );
+
+			assertThat( empPerson.getAttributeOverrides() )
+					.as( "FormulaEmployee.person should have attribute override for 'heightInches'" )
+					.anySatisfy( override ->
+							assertThat( override.getName() ).isEqualTo( "heightInches" )
+					);
+		} );
+	}
+
 	private void transformAndVerify(
 			String resourceName,
 			ServiceRegistryScope scope,

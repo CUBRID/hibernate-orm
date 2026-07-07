@@ -124,6 +124,7 @@ import org.hibernate.boot.jaxb.mapping.spi.JaxbGeneratedValueImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbGenericIdGeneratorImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbHqlImportImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbIdImpl;
+import org.hibernate.boot.jaxb.mapping.spi.JaxbIndexImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbInheritanceImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbJoinTableImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbManyToManyImpl;
@@ -167,6 +168,8 @@ import org.hibernate.mapping.KeyValue;
 import org.hibernate.mapping.ManyToOne;
 import org.hibernate.mapping.ToOne;
 import org.hibernate.mapping.OneToMany;
+import org.hibernate.mapping.OneToOne;
+import org.hibernate.type.ForeignKeyDirection;
 import org.hibernate.mapping.PersistentClass;
 import org.hibernate.mapping.Property;
 import org.hibernate.mapping.RootClass;
@@ -201,6 +204,7 @@ import static org.hibernate.boot.jaxb.hbm.transform.HbmTransformationLogging.TRA
 import static org.hibernate.internal.util.StringHelper.isBlank;
 import static org.hibernate.internal.util.StringHelper.isEmpty;
 import static org.hibernate.internal.util.StringHelper.isNotEmpty;
+import org.hibernate.internal.util.StringHelper;
 import static org.hibernate.internal.util.StringHelper.nullIfEmpty;
 import static org.hibernate.internal.util.StringHelper.qualify;
 import static org.hibernate.internal.util.StringHelper.split;
@@ -1185,9 +1189,12 @@ public class HbmXmlTransformer {
 				}
 			}
 		}
-		else if ( isNotEmpty( tableName ) ) {
-			// this is the case of transforming a <join/> where the property did not specify columns or formula.
-			// we need to create a column still to pass along the secondary table name
+		else if ( isNotEmpty( tableName )
+				|| Boolean.FALSE.equals( columnDefaults.isInsertable() )
+				|| Boolean.FALSE.equals( columnDefaults.isUpdatable() ) ) {
+			// No explicit column/formula specified, but we still need to generate a column to carry
+			// the secondary table name (for <join/>) or non-default insertable/updatable settings
+			// (e.g. <property update="false"/> inside a <component/>)
 			final var targetColumnAdapter = target.makeColumnAdapter( columnDefaults );
 			targetColumnAdapter.setTable( tableName );
 			target.addColumn( targetColumnAdapter );
@@ -1314,6 +1321,40 @@ public class HbmXmlTransformer {
 			transferJoins( (JaxbHbmRootEntityType) hbmEntity, mappingEntity, bootEntityInfo );
 		}
 		transferTransients( bootEntityInfo, mappingEntity );
+		transferPropertyIndexes( hbmEntity, mappingEntity );
+	}
+
+	private void transferPropertyIndexes(JaxbHbmEntityBaseDefinition hbmEntity, JaxbEntityImpl mappingEntity) {
+		if ( mappingEntity.getTable() == null ) {
+			return;
+		}
+		for ( Object attr : hbmEntity.getAttributes() ) {
+			if ( attr instanceof JaxbHbmBasicAttributeType basic ) {
+				if ( isNotEmpty( basic.getIndex() ) ) {
+					addTableIndex( mappingEntity, basic.getIndex(),
+							isNotEmpty( basic.getColumnAttribute() ) ? basic.getColumnAttribute() : basic.getName() );
+				}
+				for ( Serializable colOrFormula : basic.getColumnOrFormula() ) {
+					if ( colOrFormula instanceof JaxbHbmColumnType column && isNotEmpty( column.getIndex() ) ) {
+						addTableIndex( mappingEntity, column.getIndex(), column.getName() );
+					}
+				}
+			}
+			else if ( attr instanceof JaxbHbmManyToOneType manyToOne && isNotEmpty( manyToOne.getIndex() ) ) {
+				addTableIndex( mappingEntity, manyToOne.getIndex(),
+						isNotEmpty( manyToOne.getColumnAttribute() ) ? manyToOne.getColumnAttribute() : manyToOne.getName() );
+			}
+			else if ( attr instanceof JaxbHbmAnyAssociationType any && isNotEmpty( any.getIndex() ) ) {
+				addTableIndex( mappingEntity, any.getIndex(), any.getName() );
+			}
+		}
+	}
+
+	private void addTableIndex(JaxbEntityImpl mappingEntity, String indexName, String columnName) {
+		final var index = new JaxbIndexImpl();
+		index.setName( indexName );
+		index.setColumnList( columnName );
+		mappingEntity.getTable().getIndexes().add( index );
 	}
 
 	private void transferTransients(EntityTypeInfo entityInfo, JaxbEntityImpl mappingEntity) {
@@ -1324,7 +1365,10 @@ public class HbmXmlTransformer {
 		}
 
 		final Set<String> mappedPropertyNames = new HashSet<>();
-		for ( var property : persistentClass.getProperties() ) {
+		// Use getPropertyClosure() (not getProperties()) to include inherited properties
+		// from parent entities — otherwise subclass entities would generate <transient/>
+		// for properties already mapped on the parent
+		for ( var property : persistentClass.getPropertyClosure() ) {
 			mappedPropertyNames.add( property.getName() );
 		}
 		if ( persistentClass.getIdentifierProperty() != null ) {
@@ -1347,6 +1391,19 @@ public class HbmXmlTransformer {
 			final boolean fieldAccess = "field".equals(
 					hbmXmlBinding.getRoot().getDefaultAccess().toLowerCase( Locale.ROOT )
 			);
+
+			// For subclass entities, also mark all parent class properties as mapped
+			// so we don't generate duplicate <transient/> for inherited properties
+			if ( persistentClass.getSuperclass() != null ) {
+				final var superClass = persistentClass.getSuperclass().getMappedClass();
+				if ( superClass != null ) {
+					final Set<String> parentPropertyNames = TransformationHelper.discoverAllPropertyNames(
+							superClass, fieldAccess
+					);
+					mappedPropertyNames.addAll( parentPropertyNames );
+				}
+			}
+
 			final Set<String> transientNames = TransformationHelper.discoverUnmappedPropertyNames(
 					javaClass, mappedPropertyNames, fieldAccess
 			);
@@ -1679,6 +1736,26 @@ public class HbmXmlTransformer {
 				oneToOne.getPropertyRef().setName( hbmOneToOne.getPropertyRef() );
 			}
 		}
+		else {
+			// For bidirectional one-to-one without property-ref, check if:
+			// 1. The boot model resolved a mapped-by (e.g. property-ref on the other side)
+			// 2. The FK direction is TO_PARENT (meaning the other side owns the FK via constrained="true")
+			final Value value = propertyInfo.bootModelProperty().getValue();
+			if ( value instanceof OneToOne oneToOneValue ) {
+				if ( isNotEmpty( oneToOneValue.getMappedByProperty() ) ) {
+					oneToOne.setMappedBy( oneToOneValue.getMappedByProperty() );
+				}
+				else if ( oneToOneValue.getForeignKeyType() == ForeignKeyDirection.TO_PARENT ) {
+					final String mappedBy = findConstrainedOneToOnePropertyName(
+							oneToOneValue.getReferencedEntityName(),
+							propertyInfo.bootModelProperty().getPersistentClass().getEntityName()
+					);
+					if ( mappedBy != null ) {
+						oneToOne.setMappedBy( mappedBy );
+					}
+				}
+			}
+		}
 		for ( String formula : hbmOneToOne.getFormula() ) {
 			oneToOne.getJoinColumnOrJoinFormula().add( formula );
 		}
@@ -1698,7 +1775,10 @@ public class HbmXmlTransformer {
 	private boolean isPropertyRefBackReference(JaxbHbmOneToOneType hbmOneToOne, PropertyInfo propertyInfo) {
 		final String targetEntityName = isNotEmpty( hbmOneToOne.getEntityName() )
 				? hbmOneToOne.getEntityName()
-				: hbmOneToOne.getClazz();
+				: StringHelper.qualifyConditionallyIfNot(
+						hbmXmlBinding.getRoot().getPackage(),
+						hbmOneToOne.getClazz()
+				);
 		final var targetEntityInfo = transformationState.getEntityInfoByName().get( targetEntityName );
 		if ( targetEntityInfo == null ) {
 			return false;
@@ -1713,6 +1793,21 @@ public class HbmXmlTransformer {
 		}
 		final String declaringEntityName = propertyInfo.bootModelProperty().getPersistentClass().getEntityName();
 		return declaringEntityName.equals( refToOne.getReferencedEntityName() );
+	}
+
+	private String findConstrainedOneToOnePropertyName(String targetEntityName, String ownerEntityName) {
+		final var targetEntityInfo = transformationState.getEntityInfoByName().get( targetEntityName );
+		if ( targetEntityInfo == null ) {
+			return null;
+		}
+		for ( Property prop : targetEntityInfo.getPersistentClass().getPropertyClosure() ) {
+			if ( prop.getValue() instanceof OneToOne oto
+					&& oto.isConstrained()
+					&& ownerEntityName.equals( oto.getReferencedEntityName() ) ) {
+				return prop.getName();
+			}
+		}
+		return null;
 	}
 
 	private void transferManyToOne(
@@ -2209,7 +2304,42 @@ public class HbmXmlTransformer {
 						target.setFormula( formula );
 					}
 				},
-				ColumnDefaultsBasicImpl.INSTANCE,
+				new ColumnDefaults() {
+					@Override
+					public Boolean isNullable() {
+						return !element.isNotNull();
+					}
+
+					@Override
+					public Integer getLength() {
+						return element.getLength();
+					}
+
+					@Override
+					public Integer getScale() {
+						return element.getScale();
+					}
+
+					@Override
+					public Integer getPrecision() {
+						return element.getPrecision();
+					}
+
+					@Override
+					public Boolean isUnique() {
+						return element.isUnique();
+					}
+
+					@Override
+					public Boolean isInsertable() {
+						return Boolean.TRUE;
+					}
+
+					@Override
+					public Boolean isUpdatable() {
+						return Boolean.TRUE;
+					}
+				},
 				null
 		);
 	}
