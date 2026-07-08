@@ -264,6 +264,17 @@ public class HbmXmlTransformer {
 
 	private Table currentBaseTable;
 
+	private static final Set<String> IMMUTABLE_TYPE_ALIASES = Set.of(
+			"imm_date",
+			"imm_time",
+			"imm_timestamp",
+			"imm_calendar",
+			"imm_calendar_date",
+			"imm_calendar_time",
+			"imm_binary",
+			"imm_serializable"
+	);
+
 	private HbmXmlTransformer(
 			Binding<JaxbHbmHibernateMapping> hbmXmlBinding,
 			Binding<JaxbEntityMappingsImpl> mappingXmlBinding,
@@ -652,9 +663,14 @@ public class HbmXmlTransformer {
 			if ( converterConsumer == null ) {
 				throw new AssertionFailure( "Unexpected context for converted value" );
 			}
-			jaxbBasicMapping.setJavaType( convertedType.getMappedJavaType().getClass().getName() );
-			jaxbBasicMapping.setJdbcTypeCode( convertedType.getJdbcType().getJdbcTypeCode() );
 			converterConsumer.accept( convertedType.getValueConverter() );
+		}
+
+		// The hbm immutable type aliases register a BasicType with ImmutableMutabilityPlan
+		// for types that are mutable by nature (Date, Calendar, byte[], Serializable).
+		// Mark the property as not mutable so the orm.xml processing applies @Immutable.
+		if ( isNotEmpty( hbmTypeAttribute ) && IMMUTABLE_TYPE_ALIASES.contains( hbmTypeAttribute ) ) {
+			jaxbBasicMapping.setMutable( false );
 		}
 	}
 
@@ -1191,10 +1207,12 @@ public class HbmXmlTransformer {
 		}
 		else if ( isNotEmpty( tableName )
 				|| Boolean.FALSE.equals( columnDefaults.isInsertable() )
-				|| Boolean.FALSE.equals( columnDefaults.isUpdatable() ) ) {
+				|| Boolean.FALSE.equals( columnDefaults.isUpdatable() )
+				|| Boolean.TRUE.equals( columnDefaults.isUnique() )
+				|| Boolean.FALSE.equals( columnDefaults.isNullable() ) ) {
 			// No explicit column/formula specified, but we still need to generate a column to carry
 			// the secondary table name (for <join/>) or non-default insertable/updatable settings
-			// (e.g. <property update="false"/> inside a <component/>)
+			// (e.g. <property update="false"/> inside a <component/>) or unique/not-null constraints
 			final var targetColumnAdapter = target.makeColumnAdapter( columnDefaults );
 			targetColumnAdapter.setTable( tableName );
 			target.addColumn( targetColumnAdapter );
