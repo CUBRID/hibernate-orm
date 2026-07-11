@@ -9,6 +9,7 @@ import jakarta.persistence.Id;
 import org.hibernate.cfg.Environment;
 import org.hibernate.cfg.JdbcSettings;
 import org.hibernate.community.dialect.AltibaseDialect;
+import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.community.dialect.InformixDialect;
 import org.hibernate.dialect.DB2Dialect;
 import org.hibernate.dialect.Dialect;
@@ -19,6 +20,7 @@ import org.hibernate.testing.logger.LogListener;
 import org.hibernate.testing.orm.junit.EntityManagerFactoryScope;
 import org.hibernate.testing.orm.junit.Jpa;
 import org.hibernate.testing.orm.junit.Setting;
+import org.hibernate.testing.orm.junit.SkipForDialect;
 import org.jboss.logging.Logger;
 import org.junit.jupiter.api.Test;
 
@@ -32,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 				value = "org.hibernate.orm.test.datasource.TestDataSourceConnectionProvider"))
 public class DataSourceTest {
 	@Test
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver's DatabaseMetaData does not implement the JDBC 4.x methods required here")
 	void test(EntityManagerFactoryScope scope) {
 		Listener listener = new Listener();
 		LogInspectionHelper.registerListener( listener, ConnectionInfoLogger.CONNECTION_INFO_LOGGER );

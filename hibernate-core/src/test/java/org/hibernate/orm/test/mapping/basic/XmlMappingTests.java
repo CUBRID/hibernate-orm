@@ -10,6 +10,7 @@ import java.util.Map;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.cfg.AvailableSettings;
 import org.hibernate.community.dialect.AltibaseDialect;
+import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.community.dialect.InformixDialect;
 import org.hibernate.dialect.HANADialect;
 import org.hibernate.community.dialect.DerbyDialect;
@@ -131,6 +132,7 @@ public abstract class XmlMappingTests {
 
 	@Test
 	@SkipForDialect(dialectClass = GaussDBDialect.class, reason = "GaussDB don't support this xml feature")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not implement the JDBC SQLXML type")
 	public void verifyReadWorks(SessionFactoryScope scope) {
 		scope.inTransaction(
 				(session) -> {
@@ -150,6 +152,7 @@ public abstract class XmlMappingTests {
 	@SkipForDialect(dialectClass = AltibaseDialect.class, reason = "Altibase doesn't support comparing CLOBs with the = operator")
 	@SkipForDialect(dialectClass = InformixDialect.class, reason = "Blobs are not allowed in this expression")
 	@SkipForDialect(dialectClass = GaussDBDialect.class, reason = "GaussDB doesn't support comparing CLOBs with the = operator")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not implement the JDBC SQLXML type")
 	public void verifyComparisonWorks(SessionFactoryScope scope) {
 		scope.inTransaction(
 				(session) ->  {

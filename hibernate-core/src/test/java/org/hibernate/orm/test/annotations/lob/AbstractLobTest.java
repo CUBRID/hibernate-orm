@@ -5,6 +5,7 @@
 package org.hibernate.orm.test.annotations.lob;
 
 
+import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.dialect.SybaseDialect;
 import org.hibernate.testing.orm.junit.SessionFactory;
 import org.hibernate.testing.orm.junit.SessionFactoryScope;
@@ -47,6 +48,7 @@ public abstract class AbstractLobTest<B extends AbstractBook, C extends Abstract
 	protected abstract Integer getId(C compiledCode);
 
 	@Test
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not support the JDBC LOB API required here (createClob/createBlob/locator)")
 	public void testSerializableToBlob(SessionFactoryScope scope) {
 		B book = createBook();
 		Editor editor = new Editor();
@@ -72,6 +74,7 @@ public abstract class AbstractLobTest<B extends AbstractBook, C extends Abstract
 	}
 
 	@Test
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not support the JDBC LOB API required here (createClob/createBlob/locator)")
 	public void testClob(SessionFactoryScope scope) {
 
 		B book = createBook();

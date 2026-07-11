@@ -7,10 +7,12 @@ package org.hibernate.orm.test.mapping.basic;
 import java.sql.Types;
 import java.util.TimeZone;
 
+import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.metamodel.mapping.JdbcMapping;
 import org.hibernate.metamodel.mapping.internal.BasicAttributeMapping;
 import org.hibernate.metamodel.spi.MappingMetamodelImplementor;
 import org.hibernate.persister.entity.EntityPersister;
+import org.hibernate.testing.orm.junit.SkipForDialect;
 import org.hibernate.type.descriptor.jdbc.spi.JdbcTypeRegistry;
 
 import org.hibernate.testing.orm.junit.DomainModel;
@@ -35,6 +37,7 @@ import static org.hamcrest.Matchers.equalTo;
 public class TimeZoneMappingTests {
 
 	@Test
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not implement the JDBC 4.2 java.time binding required here")
 	public void verifyMappings(SessionFactoryScope scope) {
 		final MappingMetamodelImplementor mappingMetamodel = scope.getSessionFactory()
 				.getRuntimeMetamodels()
@@ -60,6 +63,7 @@ public class TimeZoneMappingTests {
 
 	@Test
 	@Jira( "https://hibernate.atlassian.net/browse/HHH-17726" )
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not implement the JDBC 4.2 java.time binding required here")
 	public void testUpdateQuery(SessionFactoryScope scope) {
 		scope.inTransaction( session -> session.persist( new EntityWithTimeZone( 1, TimeZone.getDefault() ) ) );
 		scope.inTransaction( session -> {

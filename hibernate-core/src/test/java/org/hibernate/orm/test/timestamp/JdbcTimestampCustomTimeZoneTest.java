@@ -14,6 +14,7 @@ import java.util.TimeZone;
 
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
 import org.hibernate.cfg.AvailableSettings;
+import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.dialect.MySQLDialect;
 import org.hibernate.engine.jdbc.connections.spi.ConnectionProvider;
 
@@ -68,6 +69,7 @@ public class JdbcTimestampCustomTimeZoneTest
 	}
 
 	@Test
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not implement the JDBC 4.2 java.time binding required here")
 	public void testTimeZone() throws Throwable {
 
 		connectionProvider.clear();

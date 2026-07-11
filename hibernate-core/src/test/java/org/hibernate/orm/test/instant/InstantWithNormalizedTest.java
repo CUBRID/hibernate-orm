@@ -9,6 +9,7 @@ import jakarta.persistence.Id;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.cfg.AvailableSettings;
 import org.hibernate.cfg.JdbcSettings;
+import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.dialect.MySQLDialect;
 import org.hibernate.community.dialect.TiDBDialect;
 import org.hibernate.testing.orm.junit.EntityManagerFactoryScope;
@@ -35,6 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 @SkipForDialect(dialectClass = TiDBDialect.class, reason = "Values stored in timestamp DDL type columns get the JDBC time zone offset subtracted")
 public class InstantWithNormalizedTest {
 	@Test
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not implement the JDBC 4.2 java.time binding required here")
 	public void test(EntityManagerFactoryScope scope) {
 		Instant now = Instant.now();
 		ZoneOffset zone = ZoneOffset.of("+01:00");// ZoneOffset.ofHours(1);

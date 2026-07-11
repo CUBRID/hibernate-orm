@@ -6,10 +6,12 @@ package org.hibernate.orm.test.type.temporal;
 
 import org.hibernate.boot.registry.StandardServiceRegistry;
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
+import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.testing.orm.junit.JiraKey;
 import org.hibernate.testing.orm.junit.ServiceRegistryFunctionalTesting;
 import org.hibernate.testing.orm.junit.ServiceRegistryProducer;
 import org.hibernate.testing.orm.junit.SessionFactoryScope;
+import org.hibernate.testing.orm.junit.SkipForDialect;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Assumptions;
@@ -80,6 +82,7 @@ public abstract class AbstractJavaTimeTypeTests<T, E>
 
 	@Test
 	@JiraKey(value = "HHH-13266")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not implement the JDBC 4.2 java.time binding required here")
 	public void writeThenRead(SessionFactoryScope factoryScope) {
 		Timezones.withDefaultTimeZone( env, () -> {
 			factoryScope.inTransaction( (session) -> {
@@ -96,6 +99,7 @@ public abstract class AbstractJavaTimeTypeTests<T, E>
 
 	@Test
 	@JiraKey(value = "HHH-13266")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not implement the JDBC 4.2 java.time binding required here")
 	public void writeThenNativeRead(SessionFactoryScope factoryScope) {
 		assumeNoJdbcTimeZone();
 
@@ -125,6 +129,7 @@ public abstract class AbstractJavaTimeTypeTests<T, E>
 
 	@Test
 	@JiraKey(value = "HHH-13266")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not implement the JDBC 4.2 java.time binding required here")
 	public void nativeWriteThenRead(SessionFactoryScope factoryScope) {
 		assumeNoJdbcTimeZone();
 

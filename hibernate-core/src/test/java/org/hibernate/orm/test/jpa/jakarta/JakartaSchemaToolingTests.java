@@ -11,11 +11,13 @@ import java.util.Properties;
 import org.hibernate.SessionFactoryObserver;
 import org.hibernate.cfg.AvailableSettings;
 import org.hibernate.cfg.Environment;
+import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.engine.jdbc.connections.internal.DriverManagerConnectionProvider;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.internal.util.PropertiesHelper;
 import org.hibernate.jpa.boot.spi.Bootstrap;
 import org.hibernate.jpa.boot.spi.EntityManagerFactoryBuilder;
+import org.hibernate.testing.orm.junit.SkipForDialect;
 import org.hibernate.tool.schema.Action;
 
 import org.hibernate.testing.orm.jpa.PersistenceUnitDescriptorAdapter;
@@ -53,6 +55,7 @@ import static org.hibernate.testing.jdbc.GradleParallelTestingResolver.*;
 @SessionFactory
 public class JakartaSchemaToolingTests {
 	@Test
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver's DatabaseMetaData does not implement the JDBC 4.x methods required here")
 	public void testSchemaCreation() {
 		verifySchemaCreation( JAKARTA_HBM2DDL_DATABASE_ACTION, JAKARTA_JDBC_DRIVER, JAKARTA_JDBC_URL, JAKARTA_JDBC_USER, JAKARTA_JDBC_PASSWORD );
 		verifySchemaCreation( HBM2DDL_DATABASE_ACTION, JPA_JDBC_DRIVER, JPA_JDBC_URL, JPA_JDBC_USER, JPA_JDBC_PASSWORD );
@@ -88,6 +91,7 @@ public class JakartaSchemaToolingTests {
 	}
 
 	@Test
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver's DatabaseMetaData does not implement the JDBC 4.x methods required here")
 	public void testPrecedence() {
 		// make sure JAKARTA_HBM2DDL_DATABASE_ACTION (`jakarta...`) takes precedence over HBM2DDL_DATABASE_ACTION (`javax...`)
 		try ( SessionFactoryImplementor sessionFactory = buildSessionFactory(
@@ -107,6 +111,7 @@ public class JakartaSchemaToolingTests {
 	}
 
 	@Test
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver's DatabaseMetaData does not implement the JDBC 4.x methods required here")
 	public void testCreateDropWithFailureInBetween() {
 		// Make sure that when using the "create-drop" database action, when a failure occur after schema is created,
 		// the schema is correctly dropped.
