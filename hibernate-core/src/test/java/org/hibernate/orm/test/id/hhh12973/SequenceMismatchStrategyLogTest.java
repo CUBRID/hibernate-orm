@@ -17,7 +17,9 @@ import org.hibernate.boot.MetadataSources;
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
 import org.hibernate.boot.spi.MetadataImplementor;
 import org.hibernate.cfg.AvailableSettings;
+import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.service.ServiceRegistry;
+import org.hibernate.testing.orm.junit.SkipForDialect;
 import org.hibernate.testing.orm.logger.LoggerInspectionExtension;
 import org.hibernate.tool.hbm2ddl.SchemaExport;
 import org.hibernate.tool.schema.TargetType;
@@ -100,6 +102,7 @@ public class SequenceMismatchStrategyLogTest extends EntityManagerFactoryBasedFu
 	}
 
 	@Test
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID serial does not expose the increment metadata this sequence-mismatch-strategy test asserts on")
 	public void test() {
 		produceEntityManagerFactory();
 	}

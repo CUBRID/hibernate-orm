@@ -7,6 +7,7 @@ package org.hibernate.orm.test.typeoverride;
 import java.sql.Types;
 
 import org.hibernate.boot.MetadataBuilder;
+import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.community.dialect.GaussDBDialect;
 import org.hibernate.dialect.CockroachDialect;
 import org.hibernate.dialect.Dialect;
@@ -43,6 +44,7 @@ public class TypeOverrideTest extends BaseSessionFactoryFunctionalTest {
 	}
 
 	@Test
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID resolves the overridden SQL type descriptor differently (type-model limitation, cf. HHH-6426)")
 	public void testStandardBasicSqlTypeDescriptor() {
 		final Dialect dialect = getMetadata().getDatabase().getDialect();
 		final JdbcTypeRegistry jdbcTypeRegistry = getMetadata().getTypeConfiguration()
@@ -95,6 +97,7 @@ public class TypeOverrideTest extends BaseSessionFactoryFunctionalTest {
 	}
 
 	@Test
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID resolves the overridden SQL type descriptor differently (type-model limitation, cf. HHH-6426)")
 	public void testInsert() {
 		Entity e = new Entity( "name" );
 		inTransaction(
