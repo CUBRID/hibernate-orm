@@ -13,6 +13,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import org.hibernate.annotations.IdGeneratorType;
 import org.hibernate.annotations.SourceType;
 import org.hibernate.annotations.ValueGenerationType;
+import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.dialect.Dialect;
 import org.hibernate.dialect.OracleDialect;
 import org.hibernate.dialect.SQLServerDialect;
@@ -69,6 +70,7 @@ public class MixedTimingGeneratorsTest {
 	@SkipForDialect( dialectClass = SQLServerDialect.class, reason = "SQLServer does not support setting explicit values for identity columns" )
 	@SkipForDialect( dialectClass = OracleDialect.class, reason = "Oracle does not support setting explicit values for identity columns" )
 	@SkipForDialect( dialectClass = SybaseASEDialect.class, reason = "Sybase does not support setting explicit values for identity columns" )
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support setting explicit values for identity columns")
 	public void testIdentityOrAssignedId(SessionFactoryScope scope) {
 		// on execution generation
 		scope.inTransaction( session -> session.persist( new AssignedEntity( "identity" ) ) );
@@ -88,6 +90,7 @@ public class MixedTimingGeneratorsTest {
 	@SkipForDialect( dialectClass = SQLServerDialect.class, reason = "SQLServer does not support setting explicit values for identity columns" )
 	@SkipForDialect( dialectClass = OracleDialect.class, reason = "Oracle does not support setting explicit values for identity columns" )
 	@SkipForDialect( dialectClass = SybaseASEDialect.class, reason = "Sybase does not support setting explicit values for identity columns" )
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support setting explicit values for identity columns")
 	public void testIdentityOrAssignedIdStateless(SessionFactoryScope scope) {
 		// on execution generation
 		scope.inStatelessTransaction( session -> session.insert( new AssignedEntity( "stateless_identity" ) ) );
@@ -107,6 +110,7 @@ public class MixedTimingGeneratorsTest {
 	@SkipForDialect( dialectClass = SQLServerDialect.class, reason = "SQLServer does not support setting explicit values for identity columns" )
 	@SkipForDialect( dialectClass = OracleDialect.class, reason = "Oracle does not support setting explicit values for identity columns" )
 	@SkipForDialect( dialectClass = SybaseASEDialect.class, reason = "Sybase does not support setting explicit values for identity columns" )
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support setting explicit values for identity columns")
 	public void testIdentityOrRandomId(SessionFactoryScope scope) {
 		// on execution generation
 		scope.inTransaction( session -> session.persist( new RandomEntity( "identity" ) ) );
