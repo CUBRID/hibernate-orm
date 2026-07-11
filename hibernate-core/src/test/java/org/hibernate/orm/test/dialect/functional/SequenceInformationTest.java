@@ -42,6 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 @JiraKey(value = "HHH-12973")
 @RequiresDialectFeature(feature = DialectFeatureChecks.SupportsSequences.class)
 @RequiresDialectFeature(feature = DialectFeatureChecks.SupportPooledSequences.class)
+@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver's DatabaseMetaData does not implement the JDBC 4.x methods required here (EMF setup fails)")
 public class SequenceInformationTest extends
 		EntityManagerFactoryBasedFunctionalTest {
 
@@ -78,7 +79,6 @@ public class SequenceInformationTest extends
 	}
 
 	@Test
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver's DatabaseMetaData does not implement the JDBC 4.x methods required here")
 	public void test() {
 
 		SequenceInformation productSequenceInfo = sequenceInformation( "product_sequence" );
