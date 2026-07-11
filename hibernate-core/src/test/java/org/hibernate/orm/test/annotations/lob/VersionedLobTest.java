@@ -4,11 +4,13 @@
  */
 package org.hibernate.orm.test.annotations.lob;
 
+import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.testing.orm.junit.DialectFeatureChecks;
 import org.hibernate.testing.orm.junit.DomainModel;
 import org.hibernate.testing.orm.junit.JiraKey;
 import org.hibernate.testing.orm.junit.RequiresDialectFeature;
 import org.hibernate.testing.orm.junit.SessionFactoryScope;
+import org.hibernate.testing.orm.junit.SkipForDialect;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -101,6 +103,7 @@ public class VersionedLobTest extends AbstractLobTest<VersionedBook, VersionedCo
 	}
 
 	@Test
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not support the JDBC LOB API required here (createClob/createBlob/locator)")
 	public void testVersionUnchangedString(SessionFactoryScope scope) {
 		VersionedBook b = createBook();
 		scope.inTransaction(
@@ -126,6 +129,7 @@ public class VersionedLobTest extends AbstractLobTest<VersionedBook, VersionedCo
 
 	@Test
 	@JiraKey(value = "HHH-5811")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not support the JDBC LOB API required here (createClob/createBlob/locator)")
 	public void testVersionUnchangedByteArray(SessionFactoryScope scope) {
 		VersionedCompiledCode cc = createCompiledCode();
 		scope.inTransaction(

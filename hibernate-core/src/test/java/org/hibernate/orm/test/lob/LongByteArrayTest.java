@@ -4,6 +4,7 @@
  */
 package org.hibernate.orm.test.lob;
 
+import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.dialect.SybaseASEDialect;
 import org.hibernate.testing.orm.junit.SessionFactory;
 import org.hibernate.testing.orm.junit.SessionFactoryScope;
@@ -34,6 +35,7 @@ public abstract class LongByteArrayTest {
 	}
 
 	@Test
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not support the JDBC LOB API required here (createClob/createBlob/locator)")
 	public void testBoundedLongByteArrayAccess(SessionFactoryScope scope) {
 		byte[] original = buildRecursively( ARRAY_SIZE, true );
 		byte[] changed = buildRecursively( ARRAY_SIZE, false );
@@ -74,6 +76,7 @@ public abstract class LongByteArrayTest {
 
 	@Test
 	@SkipForDialect(dialectClass = SybaseASEDialect.class, reason = "Sybase returns byte[]{0}")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not support the JDBC LOB API required here (createClob/createBlob/locator)")
 	public void testEmptyArray(SessionFactoryScope scope) {
 		byte[] empty = new byte[] {};
 
@@ -93,6 +96,7 @@ public abstract class LongByteArrayTest {
 	}
 
 	@Test
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not support the JDBC LOB API required here (createClob/createBlob/locator)")
 	public void testSaving(SessionFactoryScope scope) {
 		byte[] value = buildRecursively( ARRAY_SIZE, true );
 

@@ -21,6 +21,7 @@ import org.hibernate.Hibernate;
 import org.hibernate.QueryException;
 import org.hibernate.Transaction;
 import org.hibernate.cfg.Environment;
+import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.dialect.H2Dialect;
 import org.hibernate.dialect.MySQLDialect;
 import org.hibernate.orm.test.sql.hand.Dimension;
@@ -875,6 +876,7 @@ public class NativeSQLQueriesTest {
 	}
 
 	@Test
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not support the JDBC LOB API required here (createClob/createBlob/locator)")
 	public void testImageTypeInSQLQuery(SessionFactoryScope scope) {
 		// Make sure the last byte is non-zero as Sybase cuts that off
 		byte[] photo = buildLongByteArray( 14999, true );

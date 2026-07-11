@@ -14,6 +14,7 @@ import org.hibernate.MappingException;
 import org.hibernate.Transaction;
 import org.hibernate.boot.model.naming.ImplicitNamingStrategyLegacyJpaImpl;
 import org.hibernate.cfg.AvailableSettings;
+import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.dialect.HANADialect;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.query.NativeQuery;
@@ -215,6 +216,7 @@ public class QueryAndSQLTest {
 
 	@Test
 	@JiraKey(value = "HHH-10161")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not support binding a null parameter to a native query as required here")
 	public void testNativeQueryWithNullParameter(SessionFactoryScope scope) {
 		Chaos c0 = new Chaos();
 		c0.setId( 0L );

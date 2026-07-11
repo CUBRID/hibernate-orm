@@ -7,6 +7,7 @@ package org.hibernate.orm.test.annotations.entity;
 import jakarta.persistence.OptimisticLockException;
 import jakarta.persistence.RollbackException;
 import org.hibernate.Hibernate;
+import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.community.dialect.DerbyDialect;
 import org.hibernate.dialect.CockroachDialect;
 import org.hibernate.dialect.OracleDialect;
@@ -537,6 +538,7 @@ public class BasicHibernateAnnotationsTest {
 			dialectClass = OracleDialect.class,
 			reason = "Oracle does not support LOB comparisons, and data cleanup plus OptimisticLockType.ALL on Forest triggers LOB comparison"
 	)
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not support the JDBC LOB API required here (createClob/createBlob/locator)")
 	public void testSerialized(SessionFactoryScope scope) {
 		Forest f = new Forest();
 		f.setName( "Shire" );

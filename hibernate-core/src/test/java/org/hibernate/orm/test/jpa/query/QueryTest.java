@@ -17,6 +17,7 @@ import jakarta.persistence.TypedQuery;
 import org.hibernate.Hibernate;
 import org.hibernate.QueryException;
 import org.hibernate.SessionFactory;
+import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.community.dialect.DerbyDialect;
 import org.hibernate.community.dialect.GaussDBDialect;
 import org.hibernate.community.dialect.InformixDialect;
@@ -305,6 +306,7 @@ public class QueryTest {
 	@SkipForDialect(dialectClass = PostgresPlusDialect.class, matchSubTypes = true, reason = "HHH-10312: Cannot determine the parameter types and bind type is unknown because the value is null")
 	@SkipForDialect(dialectClass = CockroachDialect.class, matchSubTypes = true, reason = "HHH-10312: Cannot determine the parameter types and bind type is unknown because the value is null")
 	@SkipForDialect(dialectClass = InformixDialect.class, matchSubTypes = true, reason = "HHH-10312: Cannot determine the parameter types and bind type is unknown because the value is null")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not support binding a null parameter to a native query as required here")
 	public void testNativeQueryNullPositionalParameter(EntityManagerFactoryScope scope) {
 		scope.inTransaction( entityManager -> {
 			Item item = new Item( "Mouse", "Micro$oft mouse" );
@@ -335,6 +337,7 @@ public class QueryTest {
 	@SkipForDialect(dialectClass = PostgresPlusDialect.class, matchSubTypes = true, reason = "HHH-10312: Cannot determine the parameter types and bind type is unknown because the value is null")
 	@SkipForDialect(dialectClass = CockroachDialect.class, matchSubTypes = true, reason = "HHH-10312: Cannot determine the parameter types and bind type is unknown because the value is null")
 	@SkipForDialect(dialectClass = InformixDialect.class, matchSubTypes = true, reason = "HHH-10312: Cannot determine the parameter types and bind type is unknown because the value is null")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not support binding a null parameter to a native query as required here")
 	public void testNativeQueryNullPositionalParameterParameter(EntityManagerFactoryScope scope) {
 		scope.inTransaction( entityManager -> {
 			Item item = new Item( "Mouse", "Micro$oft mouse" );
@@ -380,6 +383,7 @@ public class QueryTest {
 	@SkipForDialect(dialectClass = PostgresPlusDialect.class, matchSubTypes = true, reason = "HHH-10312: Cannot determine the parameter types and bind type is unknown because the value is null")
 	@SkipForDialect(dialectClass = CockroachDialect.class, matchSubTypes = true, reason = "HHH-10312: Cannot determine the parameter types and bind type is unknown because the value is null")
 	@SkipForDialect(dialectClass = InformixDialect.class, matchSubTypes = true, reason = "HHH-10312: Cannot determine the parameter types and bind type is unknown because the value is null")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not support binding a null parameter to a native query as required here")
 	public void testNativeQueryNullNamedParameter(EntityManagerFactoryScope scope) {
 		scope.inTransaction( entityManager -> {
 			Item item = new Item( "Mouse", "Micro$oft mouse" );
@@ -410,6 +414,7 @@ public class QueryTest {
 	@SkipForDialect(dialectClass = PostgresPlusDialect.class, matchSubTypes = true, reason = "HHH-10312: Cannot determine the parameter types and bind type is unknown because the value is null")
 	@SkipForDialect(dialectClass = CockroachDialect.class, matchSubTypes = true, reason = "HHH-10312: Cannot determine the parameter types and bind type is unknown because the value is null")
 	@SkipForDialect(dialectClass = InformixDialect.class, matchSubTypes = true, reason = "HHH-10312: Cannot determine the parameter types and bind type is unknown because the value is null")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not support binding a null parameter to a native query as required here")
 	public void testNativeQueryNullNamedParameterParameter(EntityManagerFactoryScope scope) {
 		scope.inTransaction( entityManager -> {
 			Item item = new Item( "Mouse", "Micro$oft mouse" );

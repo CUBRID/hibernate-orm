@@ -4,10 +4,12 @@
  */
 package org.hibernate.orm.test.typedescriptor;
 
+import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.testing.orm.junit.DomainModel;
 import org.hibernate.testing.orm.junit.JiraKey;
 import org.hibernate.testing.orm.junit.SessionFactory;
 import org.hibernate.testing.orm.junit.SessionFactoryScope;
+import org.hibernate.testing.orm.junit.SkipForDialect;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,6 +43,7 @@ public class NullTest {
 
 	@Test
 	@JiraKey("HHH-18581")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not support binding a null parameter to a native query as required here")
 	public void passingNullAsParameterOfNativeQuery(SessionFactoryScope scope) {
 		scope.inTransaction(
 				session -> {

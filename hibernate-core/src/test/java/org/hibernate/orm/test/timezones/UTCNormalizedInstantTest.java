@@ -10,6 +10,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.TimeZone;
 
 import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.community.dialect.InformixDialect;
 import org.hibernate.dialect.Dialect;
 import org.hibernate.dialect.SybaseDialect;
@@ -33,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 @SessionFactory
 public class UTCNormalizedInstantTest {
 
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not implement the JDBC 4.2 java.time binding required here")
 	@Test void test(SessionFactoryScope scope) {
 		final Instant instant;
 		final Dialect dialect = scope.getSessionFactory().getJdbcServices().getDialect();
@@ -68,6 +70,7 @@ public class UTCNormalizedInstantTest {
 
 	@SkipForDialect(dialectClass = InformixDialect.class,
 			reason = "Informix driver misbehaves")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not implement the JDBC 4.2 java.time binding required here")
 	@Test void testWithSystemTimeZone(SessionFactoryScope scope) {
 		final TimeZone timeZoneBefore = TimeZone.getDefault();
 		TimeZone.setDefault( TimeZone.getTimeZone( "CET" ) );

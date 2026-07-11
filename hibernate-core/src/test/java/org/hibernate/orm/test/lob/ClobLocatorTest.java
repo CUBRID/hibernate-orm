@@ -5,12 +5,14 @@
 package org.hibernate.orm.test.lob;
 
 import org.hibernate.LockMode;
+import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.dialect.SybaseASEDialect;
 import org.hibernate.testing.orm.junit.DialectFeatureChecks;
 import org.hibernate.testing.orm.junit.DomainModel;
 import org.hibernate.testing.orm.junit.RequiresDialectFeature;
 import org.hibernate.testing.orm.junit.SessionFactory;
 import org.hibernate.testing.orm.junit.SessionFactoryScope;
+import org.hibernate.testing.orm.junit.SkipForDialect;
 import org.hibernate.type.descriptor.java.DataHelper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -45,6 +47,7 @@ public class ClobLocatorTest {
 	}
 
 	@Test
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not support the JDBC LOB API required here (createClob/createBlob/locator)")
 	public void testBoundedClobLocatorAccess(SessionFactoryScope scope) throws Throwable {
 		String original = buildString( CLOB_SIZE, 'x' );
 		String changed = buildString( CLOB_SIZE, 'y' );
@@ -168,6 +171,7 @@ public class ClobLocatorTest {
 			feature = DialectFeatureChecks.SupportsUnboundedLobLocatorMaterializationCheck.class,
 			comment = "database/driver does not support expected LOB usage pattern"
 	)
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not support the JDBC LOB API required here (createClob/createBlob/locator)")
 	public void testUnboundedClobLocatorAccess(SessionFactoryScope scope) throws Throwable {
 		// Note: unbounded mutation of the underlying lob data is completely
 		// unsupported; most databases would not allow such a construct anyway.
