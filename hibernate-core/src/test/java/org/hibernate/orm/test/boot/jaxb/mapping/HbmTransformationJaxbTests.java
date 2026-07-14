@@ -1095,4 +1095,41 @@ public class HbmTransformationJaxbTests {
 			}
 		} );
 	}
+
+	@Test
+	@JiraKey( "HHH-20683" )
+	public void testDynamicEntityIdNameTransformation(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/dynamic-entity/hbm.xml", scope, transformed -> {
+			assertThat( transformed.getEntities() ).hasSize( 2 );
+
+			final JaxbEntityImpl baseEntity = transformed.getEntities().stream()
+					.filter( e -> "Base".equals( e.getName() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( baseEntity.getAttributes().getIdAttributes() ).hasSize( 1 );
+			final JaxbIdImpl id = baseEntity.getAttributes().getIdAttributes().get( 0 );
+			assertThat( id.getName() )
+					.as( "Dynamic entity <id/> without name should get a default name from the boot model" )
+					.isNotNull();
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-20684" )
+	public void testDiscriminatorSubclassTransientGeneration(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/subclass-transient/hbm.xml", scope, transformed -> {
+			assertThat( transformed.getEntities() ).hasSize( 3 );
+
+			final JaxbEntityImpl employeeEntity = transformed.getEntities().stream()
+					.filter( e -> "Employee".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( employeeEntity.getAttributes().getTransients() )
+					.extracting( JaxbTransientImpl::getName )
+					.as( "Unmapped field 'manager' on discriminator subclass Employee should be marked transient" )
+					.contains( "manager" );
+		} );
+	}
 }
