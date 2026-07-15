@@ -1072,7 +1072,7 @@ public class HbmTransformationJaxbTests {
 	}
 
 	@Test
-	@JiraKey( "HHH-20682" )
+	@JiraKey( "HHH-20686" )
 	public void testNaturalIdNullablePropertyTransformation(ServiceRegistryScope scope) {
 		transformAndVerify( "xml/jaxb/mapping/natural-id-nullable/hbm.xml", scope, transformed -> {
 			assertThat( transformed.getEntities() ).hasSize( 1 );
@@ -1130,6 +1130,69 @@ public class HbmTransformationJaxbTests {
 					.extracting( JaxbTransientImpl::getName )
 					.as( "Unmapped field 'manager' on discriminator subclass Employee should be marked transient" )
 					.contains( "manager" );
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-20680" )
+	public void testDiscriminatorSubclassJoinTransformation(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/subclass-join/hbm.xml", scope, transformed -> {
+			assertThat( transformed.getEntities() ).hasSize( 2 );
+
+			final JaxbEntityImpl subclassEntity = transformed.getEntities().stream()
+					.filter( e -> e.getClazz() != null && e.getClazz().endsWith( ".B" ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( subclassEntity.getSecondaryTables() )
+					.as( "<join> on discriminator subclass should produce a secondary table" )
+					.hasSize( 1 );
+			assertThat( subclassEntity.getSecondaryTables().get( 0 ).getName() )
+					.isEqualTo( "B2" );
+
+			assertThat( subclassEntity.getAttributes().getBasicAttributes() )
+					.extracting( JaxbBasicImpl::getName )
+					.as( "Properties from <join> should be transferred" )
+					.contains( "BName" );
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-20687" )
+	public void testSharedPkOneToOneTransformation(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/one-to-one-shared-pk/hbm.xml", scope, transformed -> {
+			assertThat( transformed.getEntities() ).hasSize( 2 );
+
+			final JaxbEntityImpl parentEntity = transformed.getEntities().stream()
+					.filter( e -> "C1".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( parentEntity.getAttributes().getOneToOneAttributes() ).hasSize( 1 );
+			final JaxbOneToOneImpl oneToOne = parentEntity.getAttributes().getOneToOneAttributes().get( 0 );
+			assertThat( oneToOne.getName() ).isEqualTo( "d" );
+			assertThat( oneToOne.getPrimaryKeyJoinColumn() )
+					.as( "Shared PK one-to-one should produce <primary-key-join-column/>" )
+					.isNotEmpty();
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-20690" )
+	public void testPropertyCaseNotMarkedTransient(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/property-case-transient/hbm.xml", scope, transformed -> {
+			assertThat( transformed.getEntities() ).hasSize( 1 );
+
+			final JaxbEntityImpl entity = transformed.getEntities().get( 0 );
+
+			assertThat( entity.getAttributes().getBasicAttributes() )
+					.extracting( JaxbBasicImpl::getName )
+					.contains( "C1Name" );
+
+			assertThat( entity.getAttributes().getTransients() )
+					.extracting( JaxbTransientImpl::getName )
+					.as( "Mapped property 'C1Name' should not have its backing field 'c1Name' marked transient" )
+					.doesNotContain( "c1Name" );
 		} );
 	}
 }
