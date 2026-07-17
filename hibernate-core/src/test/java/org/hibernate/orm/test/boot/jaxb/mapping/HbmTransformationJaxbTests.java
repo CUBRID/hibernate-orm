@@ -1195,4 +1195,45 @@ public class HbmTransformationJaxbTests {
 					.doesNotContain( "c1Name" );
 		} );
 	}
+
+	@Test
+	@JiraKey( "HHH-20694" )
+	public void testInverseOneToManyWithCompositeKeyPropertyMappedBy(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/inverse-composite-key/hbm.xml", scope, transformed -> {
+			assertThat( transformed.getEntities() ).hasSize( 2 );
+
+			final JaxbEntityImpl employeeEntity = transformed.getEntities().stream()
+					.filter( e -> "Employee".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( employeeEntity.getAttributes().getOneToManyAttributes() ).hasSize( 1 );
+			final JaxbOneToManyImpl employments = employeeEntity.getAttributes().getOneToManyAttributes().get( 0 );
+			assertThat( employments.getName() ).isEqualTo( "employments" );
+			assertThat( employments.getMappedBy() )
+					.as( "Inverse one-to-many should resolve mapped-by to composite-id key-property 'personName'" )
+					.isEqualTo( "personName" );
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-20697" )
+	public void testNonAggregatedCompositeIdColumnsNotUnique(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/inverse-composite-key/hbm.xml", scope, transformed -> {
+			final JaxbEntityImpl employmentEntity = transformed.getEntities().stream()
+					.filter( e -> "Employment".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			for ( JaxbIdImpl id : employmentEntity.getAttributes().getIdAttributes() ) {
+				if ( id.getColumn() != null ) {
+					assertThat( id.getColumn().isUnique() )
+							.as( "Composite-id key-property '%s' should not have unique=true — " +
+									"uniqueness is guaranteed by the composite PK, not individual columns",
+									id.getName() )
+							.isNotEqualTo( true );
+				}
+			}
+		} );
+	}
 }
