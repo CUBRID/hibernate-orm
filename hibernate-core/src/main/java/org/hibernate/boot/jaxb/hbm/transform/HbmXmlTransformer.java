@@ -101,6 +101,7 @@ import org.hibernate.boot.jaxb.mapping.spi.JaxbCascadeTypeImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbCheckConstraintImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbCollectionTableImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbCollectionUserTypeImpl;
+import org.hibernate.boot.jaxb.mapping.spi.JaxbCollectionIdImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbColumnImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbColumnResultImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbConfigurationParameterImpl;
@@ -861,11 +862,7 @@ public class HbmXmlTransformer {
 
 		final var key = hbmSubclass.getKey();
 		if ( key != null ) {
-			final var joinColumn = new JaxbPrimaryKeyJoinColumnImpl();
-			// todo (7.0) : formula and multiple columns
-			joinColumn.setName( key.getColumnAttribute() );
-			subclassEntity.getPrimaryKeyJoinColumns().add( joinColumn );
-			joinColumn.setForeignKey( transformForeignKey( key.getForeignKey() ) );
+			transferKeyColumns( key, subclassEntity.getPrimaryKeyJoinColumns() );
 		}
 
 		if ( !hbmSubclass.getJoinedSubclass().isEmpty() ) {
@@ -1622,7 +1619,31 @@ public class HbmXmlTransformer {
 			if ( column.getLength() != null ) {
 				jaxbColumn.setLength( column.getLength().intValue() );
 			}
+			else if ( discriminatorType == DiscriminatorType.STRING ) {
+				final Integer length = determineDiscriminatorLength( bootEntityInfo.getPersistentClass() );
+				if ( length != null ) {
+					jaxbColumn.setLength( length );
+				}
+			}
 		}
+	}
+
+	// The JPA default for @DiscriminatorColumn.length is 31. HBM mappings have no such
+	// limit and often use fully-qualified class names as discriminator values. When the
+	// longest value exceeds 31 we must set the length explicitly to avoid truncation.
+	private static Integer determineDiscriminatorLength(PersistentClass rootClass) {
+		int maxLength = 0;
+		final String rootValue = rootClass.getDiscriminatorValue();
+		if ( rootValue != null ) {
+			maxLength = rootValue.length();
+		}
+		for ( var subclass : rootClass.getSubclasses() ) {
+			final String value = subclass.getDiscriminatorValue();
+			if ( value != null && value.length() > maxLength ) {
+				maxLength = value.length();
+			}
+		}
+		return maxLength > 31 ? maxLength : null;
 	}
 
 	private static DiscriminatorType determineDiscriminatorType(Value discriminatorBinding) {
@@ -2411,9 +2432,11 @@ public class HbmXmlTransformer {
 			transferMapKey( map, target, propertyInfo );
 			target.setClassification( LimitedCollectionClassification.MAP );
 		}
-		else if ( source instanceof JaxbHbmIdBagCollectionType ) {
-			handleUnsupported( "collection-id is not supported for transformation" );
-
+		else if ( source instanceof JaxbHbmIdBagCollectionType idBag ) {
+			// Do not set classification to BAG — the presence of <collection-id> on
+			// the target will cause CollectionBinder to classify it as ID_BAG.
+			// Setting BAG explicitly would bypass the CollectionId annotation check.
+			transferCollectionId( idBag, target );
 		}
 		else if ( source instanceof JaxbHbmBagCollectionType ) {
 			target.setClassification( LimitedCollectionClassification.BAG );
@@ -2442,6 +2465,57 @@ public class HbmXmlTransformer {
 			);
 			target.setClassification( LimitedCollectionClassification.LIST );
 		}
+	}
+
+	private void transferCollectionId(JaxbHbmIdBagCollectionType idBag, JaxbPluralAttribute target) {
+		final var hbmCollectionId = idBag.getCollectionId();
+		if ( hbmCollectionId == null ) {
+			return;
+		}
+
+		final var collectionId = new JaxbCollectionIdImpl();
+
+		final var column = new JaxbColumnImpl();
+		column.setName( hbmCollectionId.getColumnAttribute() );
+		if ( hbmCollectionId.getLength() != null ) {
+			column.setLength( hbmCollectionId.getLength() );
+		}
+		collectionId.setColumn( column );
+
+		final var hbmGenerator = hbmCollectionId.getGenerator();
+		if ( hbmGenerator != null ) {
+			final var generatedValue = new JaxbGeneratedValueImpl();
+			final String generatorClass = hbmGenerator.getClazz();
+			final var hbmParams = hbmGenerator.getConfigParameters();
+
+			if ( !hbmParams.isEmpty() ) {
+				final var generatorName = target.getName() + "-collection-id-generator";
+				generatedValue.setGenerator( generatorName );
+
+				final var genDef = new JaxbGenericIdGeneratorImpl();
+				genDef.setName( generatorName );
+				genDef.setClazz( generatorClass );
+				for ( var hbmParam : hbmParams ) {
+					final var param = new JaxbConfigurationParameterImpl();
+					param.setName( hbmParam.getName() );
+					param.setValue( hbmParam.getValue() );
+					genDef.getParameters().add( param );
+				}
+				mappingXmlBinding.getRoot().getGenericGenerators().add( genDef );
+			}
+			else {
+				generatedValue.setGenerator( generatorClass );
+			}
+
+			collectionId.setGenerator( generatedValue );
+		}
+
+		final String hbmType = hbmCollectionId.getType();
+		if ( isNotEmpty( hbmType ) ) {
+			collectionId.setTarget( Character.toUpperCase( hbmType.charAt( 0 ) ) + hbmType.substring( 1 ) );
+		}
+
+		target.setCollectionId( collectionId );
 	}
 
 	private void transferSort(String sort, JaxbPluralAttribute target) {
@@ -3981,15 +4055,33 @@ public class HbmXmlTransformer {
 		secondaryTable.setOwned( !hbmJoin.isInverse() );
 		final JaxbHbmKeyType key = hbmJoin.getKey();
 		if ( key != null ) {
-			final var joinColumn = new JaxbPrimaryKeyJoinColumnImpl();
-			joinColumn.setName( key.getColumnAttribute() );
-			secondaryTable.getPrimaryKeyJoinColumn().add( joinColumn );
-
-			joinColumn.setForeignKey( transformForeignKey( key.getForeignKey() ) );
+			transferKeyColumns( key, secondaryTable.getPrimaryKeyJoinColumn() );
 		}
 		mappingEntity.getSecondaryTables().add( secondaryTable );
 	}
 
+
+	private void transferKeyColumns(JaxbHbmKeyType key, List<JaxbPrimaryKeyJoinColumnImpl> targetColumns) {
+		final String columnName = key.getColumnAttribute();
+		if ( columnName != null || key.getColumn().size() <= 1 ) {
+			final var joinColumn = new JaxbPrimaryKeyJoinColumnImpl();
+			if ( columnName == null && !key.getColumn().isEmpty() ) {
+				joinColumn.setName( key.getColumn().get( 0 ).getName() );
+			}
+			else {
+				joinColumn.setName( columnName );
+			}
+			joinColumn.setForeignKey( transformForeignKey( key.getForeignKey() ) );
+			targetColumns.add( joinColumn );
+		}
+		else {
+			for ( JaxbHbmColumnType column : key.getColumn() ) {
+				final var joinColumn = new JaxbPrimaryKeyJoinColumnImpl();
+				joinColumn.setName( column.getName() );
+				targetColumns.add( joinColumn );
+			}
+		}
+	}
 
 	// ToOne
 	private void transferFetchable(

@@ -218,6 +218,48 @@ public class HbmTransformationJaxbTests {
 	}
 
 	@Test
+	@JiraKey( "HHH-20723" )
+	public void testJoinedSubclassForeignKeyNameWithNestedColumn(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/joined-subclass-fk/hbm.xml", scope, transformed -> {
+			assertThat( transformed.getEntities() ).hasSize( 2 );
+
+			final JaxbEntityImpl childEntity = transformed.getEntities().stream()
+					.filter( e -> "JoinedSubclassFkChild".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+			assertThat( childEntity.getPrimaryKeyJoinColumns() ).hasSize( 1 );
+
+			final var joinColumn = childEntity.getPrimaryKeyJoinColumns().get( 0 );
+			assertThat( joinColumn.getName() )
+					.as( "Column name from nested <column> element should be preserved" )
+					.isEqualTo( "CHILD_BASE_ID" );
+			assertThat( joinColumn.getForeignKey() )
+					.as( "Foreign key should be set" )
+					.isNotNull();
+			assertThat( joinColumn.getForeignKey().getName() )
+					.as( "Foreign key name from <key foreign-key='...'> should be preserved" )
+					.isEqualTo( "FK_CHILD_BASE" );
+		} );
+	}
+
+	@Test
+	public void testJoinedSubclassMultipleKeyColumns(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/joined-subclass-composite-key/hbm.xml", scope, transformed -> {
+			final JaxbEntityImpl childEntity = transformed.getEntities().stream()
+					.filter( e -> "JoinedSubclassCompositeChild".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+			assertThat( childEntity.getPrimaryKeyJoinColumns() )
+					.as( "All <column> elements in the composite <key> should be transferred" )
+					.hasSize( 2 );
+			assertThat( childEntity.getPrimaryKeyJoinColumns().get( 0 ).getName() )
+					.isEqualTo( "CHILD_TENANT_ID" );
+			assertThat( childEntity.getPrimaryKeyJoinColumns().get( 1 ).getName() )
+					.isEqualTo( "CHILD_BASE_ID" );
+		} );
+	}
+
+	@Test
 	@JiraKey( "HHH-20566" )
 	public void testJoinedSubclassInheritanceStrategy(ServiceRegistryScope scope) {
 		transformAndVerify( "xml/jaxb/mapping/joined-subclass/hbm.xml", scope, transformed -> {
@@ -1245,6 +1287,77 @@ public class HbmTransformationJaxbTests {
 	}
 
 	@Test
+	@JiraKey( "HHH-20726" )
+	public void testDiscriminatorColumnLengthForLongValues(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/discriminator-length/hbm.xml", scope, transformed -> {
+			assertThat( transformed.getEntities() ).hasSize( 2 );
+
+			final JaxbEntityImpl baseEntity = transformed.getEntities().stream()
+					.filter( e -> "DiscriminatorLengthBase".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( baseEntity.getDiscriminatorColumn() ).isNotNull();
+			assertThat( baseEntity.getDiscriminatorColumn().getLength() )
+					.as( "Discriminator column length should accommodate the longest discriminator value" )
+					.isGreaterThanOrEqualTo(
+							"org.hibernate.orm.test.boot.jaxb.mapping.DiscriminatorLengthChild".length()
+					);
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-20724" )
+	public void testSubclassJoinForeignKeyNameTransformation(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/subclass-join-fk/hbm.xml", scope, transformed -> {
+			assertThat( transformed.getEntities() ).hasSize( 2 );
+
+			final JaxbEntityImpl childEntity = transformed.getEntities().stream()
+					.filter( e -> "SubclassJoinFkChild".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( childEntity.getSecondaryTables() ).hasSize( 1 );
+
+			final var secondaryTable = childEntity.getSecondaryTables().get( 0 );
+			assertThat( secondaryTable.getName() ).isEqualTo( "SJ_FK_CHILD" );
+			assertThat( secondaryTable.getPrimaryKeyJoinColumn() ).hasSize( 1 );
+
+			final var joinColumn = secondaryTable.getPrimaryKeyJoinColumn().get( 0 );
+			assertThat( joinColumn.getName() )
+					.isEqualTo( "CHILD_BASE_ID" );
+			assertThat( joinColumn.getForeignKey() )
+					.as( "Foreign key should be set on the join column from <key foreign-key='...'>" )
+					.isNotNull();
+			assertThat( joinColumn.getForeignKey().getName() )
+					.as( "Foreign key name should be preserved" )
+					.isEqualTo( "FK_CHILD_SJ" );
+		} );
+	}
+
+	@Test
+	public void testSecondaryTableMultipleKeyColumns(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/subclass-join-composite-key/hbm.xml", scope, transformed -> {
+			final JaxbEntityImpl childEntity = transformed.getEntities().stream()
+					.filter( e -> "SubclassJoinCompositeChild".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( childEntity.getSecondaryTables() ).hasSize( 1 );
+
+			final var secondaryTable = childEntity.getSecondaryTables().get( 0 );
+			assertThat( secondaryTable.getName() ).isEqualTo( "SJ_CK_CHILD" );
+			assertThat( secondaryTable.getPrimaryKeyJoinColumn() )
+					.as( "All <column> elements in the composite <key> should be transferred" )
+					.hasSize( 2 );
+			assertThat( secondaryTable.getPrimaryKeyJoinColumn().get( 0 ).getName() )
+					.isEqualTo( "CHILD_COL_1" );
+			assertThat( secondaryTable.getPrimaryKeyJoinColumn().get( 1 ).getName() )
+					.isEqualTo( "CHILD_COL_2" );
+		} );
+	}
+
+	@Test
 	@JiraKey( "HHH-20687" )
 	public void testSharedPkOneToOneTransformation(ServiceRegistryScope scope) {
 		transformAndVerify( "xml/jaxb/mapping/one-to-one-shared-pk/hbm.xml", scope, transformed -> {
@@ -1428,6 +1541,48 @@ public class HbmTransformationJaxbTests {
 			assertThat( personManyToOne.getFetch() )
 					.as( "Composite-id key-many-to-one should have fetch=LAZY" )
 					.isEqualTo( jakarta.persistence.FetchType.LAZY );
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-20751" )
+	public void testIdBagCollectionIdTransformation(ServiceRegistryScope scope) {
+		// An <idbag> with a <collection-id> using a sequence generator should be
+		// transformed into a <many-to-many> with a <collection-id> element containing
+		// the column, generator reference, and target type.
+		transformAndVerify( "xml/jaxb/mapping/idbag-collection-id/hbm.xml", scope, transformed -> {
+			assertThat( transformed.getEntities() ).hasSize( 1 );
+
+			final JaxbEntityImpl entity = transformed.getEntities().get( 0 );
+
+			// The many-to-many should have a collection-id
+			assertThat( entity.getAttributes().getManyToManyAttributes() ).hasSize( 1 );
+			final var manyToMany = entity.getAttributes().getManyToManyAttributes().get( 0 );
+			assertThat( manyToMany.getName() ).isEqualTo( "children" );
+
+			final var collectionId = manyToMany.getCollectionId();
+			assertThat( collectionId )
+					.as( "collection-id should be present on the idbag many-to-many" )
+					.isNotNull();
+
+			// Column
+			assertThat( collectionId.getColumn() ).isNotNull();
+			assertThat( collectionId.getColumn().getName() ).isEqualTo( "bag_id" );
+
+			// Generator reference
+			assertThat( collectionId.getGenerator() ).isNotNull();
+			assertThat( collectionId.getGenerator().getGenerator() )
+					.as( "Generator should reference a named generic-generator" )
+					.isEqualTo( "children-collection-id-generator" );
+
+			// Target type
+			assertThat( collectionId.getTarget() ).isEqualTo( "Long" );
+
+			// The named generic-generator should be registered at entity-mappings level
+			assertThat( transformed.getGenericGenerators() )
+					.as( "A generic-generator for the collection-id should be at entity-mappings level" )
+					.anyMatch( g -> "children-collection-id-generator".equals( g.getName() )
+									&& "sequence".equals( g.getClazz() ) );
 		} );
 	}
 
