@@ -48,7 +48,7 @@ public abstract class AbstractLobTest<B extends AbstractBook, C extends Abstract
 	protected abstract Integer getId(C compiledCode);
 
 	@Test
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not support the JDBC LOB API required here (createClob/createBlob/locator)")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "a LOB value written through this mapping reads back as NULL on CUBRID")
 	public void testSerializableToBlob(SessionFactoryScope scope) {
 		B book = createBook();
 		Editor editor = new Editor();
@@ -74,7 +74,7 @@ public abstract class AbstractLobTest<B extends AbstractBook, C extends Abstract
 	}
 
 	@Test
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not support the JDBC LOB API required here (createClob/createBlob/locator)")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "a LOB value written through this mapping reads back as NULL on CUBRID")
 	public void testClob(SessionFactoryScope scope) {
 
 		B book = createBook();

@@ -103,7 +103,7 @@ public class VersionedLobTest extends AbstractLobTest<VersionedBook, VersionedCo
 	}
 
 	@Test
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not support the JDBC LOB API required here (createClob/createBlob/locator)")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "a LOB value written through this mapping reads back as NULL on CUBRID")
 	public void testVersionUnchangedString(SessionFactoryScope scope) {
 		VersionedBook b = createBook();
 		scope.inTransaction(
@@ -129,7 +129,7 @@ public class VersionedLobTest extends AbstractLobTest<VersionedBook, VersionedCo
 
 	@Test
 	@JiraKey(value = "HHH-5811")
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not support the JDBC LOB API required here (createClob/createBlob/locator)")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "a LOB value written through this mapping reads back as NULL on CUBRID")
 	public void testVersionUnchangedByteArray(SessionFactoryScope scope) {
 		VersionedCompiledCode cc = createCompiledCode();
 		scope.inTransaction(

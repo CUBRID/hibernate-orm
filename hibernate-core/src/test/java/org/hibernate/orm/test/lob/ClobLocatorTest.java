@@ -47,7 +47,7 @@ public class ClobLocatorTest {
 	}
 
 	@Test
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not support the JDBC LOB API required here (createClob/createBlob/locator)")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "the CUBRID JDBC driver reports JDBC major version 3, so Hibernate disables contextual LOB creation and no LOB locator is available here")
 	public void testBoundedClobLocatorAccess(SessionFactoryScope scope) throws Throwable {
 		String original = buildString( CLOB_SIZE, 'x' );
 		String changed = buildString( CLOB_SIZE, 'y' );
@@ -171,7 +171,7 @@ public class ClobLocatorTest {
 			feature = DialectFeatureChecks.SupportsUnboundedLobLocatorMaterializationCheck.class,
 			comment = "database/driver does not support expected LOB usage pattern"
 	)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not support the JDBC LOB API required here (createClob/createBlob/locator)")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "the CUBRID JDBC driver reports JDBC major version 3, so Hibernate disables contextual LOB creation and no LOB locator is available here")
 	public void testUnboundedClobLocatorAccess(SessionFactoryScope scope) throws Throwable {
 		// Note: unbounded mutation of the underlying lob data is completely
 		// unsupported; most databases would not allow such a construct anyway.

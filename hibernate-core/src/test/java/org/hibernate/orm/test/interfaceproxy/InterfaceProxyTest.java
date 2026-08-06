@@ -39,7 +39,7 @@ public class InterfaceProxyTest {
 
 	@SkipForDialect(dialectClass = AltibaseDialect.class, majorVersion = 7, minorVersion = 1,
 					reason = "Altibase 7.1 lob column cannot be not null")
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not support the JDBC LOB API required here (createClob/createBlob/locator)")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID rejects the schema-qualified table name Hibernate renders for this mapping (Unknown class)")
 	public void testInterfaceProxies(SessionFactoryScope scope) {
 		Document doc = new DocumentImpl();
 		SecureDocument doc2 = new SecureDocumentImpl();

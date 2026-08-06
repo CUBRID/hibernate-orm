@@ -67,6 +67,13 @@ public abstract class XmlMappingTests {
 		public Jackson() {
 			super( false );
 		}
+
+		@Test
+		@Override
+		@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "the XML value written to the CLOB column reads back as NULL on CUBRID with this format mapper")
+		public void verifyReadWorks(SessionFactoryScope scope) {
+			super.verifyReadWorks( scope );
+		}
 	}
 
 	@ServiceRegistry(settings = @Setting(name = AvailableSettings.XML_FORMAT_MAPPER, value = "jackson3-xml"))
@@ -74,6 +81,13 @@ public abstract class XmlMappingTests {
 
 		public Jackson3() {
 			super( false );
+		}
+
+		@Test
+		@Override
+		@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "the XML value written to the CLOB column reads back as NULL on CUBRID with this format mapper")
+		public void verifyReadWorks(SessionFactoryScope scope) {
+			super.verifyReadWorks( scope );
 		}
 	}
 
@@ -132,7 +146,6 @@ public abstract class XmlMappingTests {
 
 	@Test
 	@SkipForDialect(dialectClass = GaussDBDialect.class, reason = "GaussDB don't support this xml feature")
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not implement the JDBC SQLXML type")
 	public void verifyReadWorks(SessionFactoryScope scope) {
 		scope.inTransaction(
 				(session) -> {
@@ -152,7 +165,7 @@ public abstract class XmlMappingTests {
 	@SkipForDialect(dialectClass = AltibaseDialect.class, reason = "Altibase doesn't support comparing CLOBs with the = operator")
 	@SkipForDialect(dialectClass = InformixDialect.class, reason = "Blobs are not allowed in this expression")
 	@SkipForDialect(dialectClass = GaussDBDialect.class, reason = "GaussDB doesn't support comparing CLOBs with the = operator")
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not implement the JDBC SQLXML type")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID compares CLOB values by locator, so the = operator never matches the stored XML content")
 	public void verifyComparisonWorks(SessionFactoryScope scope) {
 		scope.inTransaction(
 				(session) ->  {

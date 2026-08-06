@@ -71,7 +71,7 @@ public class LobMergeTest {
 	}
 
 	@Test
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not support the JDBC LOB API required here (createClob/createBlob/locator)")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "the CUBRID JDBC driver reports JDBC major version 3, so Hibernate disables contextual LOB creation and no LOB locator is available here")
 	public void testMergingClobData(SessionFactoryScope factoryScope) throws Exception {
 		final String original = ClobLocatorTest.buildString( LOB_SIZE, 'a' );
 		final String updated = ClobLocatorTest.buildString( LOB_SIZE, 'z' );

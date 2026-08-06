@@ -35,7 +35,7 @@ public abstract class LongByteArrayTest {
 	}
 
 	@Test
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not support the JDBC LOB API required here (createClob/createBlob/locator)")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID rejects the byte[] value Hibernate binds to this LOB column (type conversion error)")
 	public void testBoundedLongByteArrayAccess(SessionFactoryScope scope) {
 		byte[] original = buildRecursively( ARRAY_SIZE, true );
 		byte[] changed = buildRecursively( ARRAY_SIZE, false );
@@ -76,7 +76,7 @@ public abstract class LongByteArrayTest {
 
 	@Test
 	@SkipForDialect(dialectClass = SybaseASEDialect.class, reason = "Sybase returns byte[]{0}")
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not support the JDBC LOB API required here (createClob/createBlob/locator)")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID rejects binding a zero-length byte[] to this LOB column (type conversion error)")
 	public void testEmptyArray(SessionFactoryScope scope) {
 		byte[] empty = new byte[] {};
 
@@ -96,7 +96,6 @@ public abstract class LongByteArrayTest {
 	}
 
 	@Test
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not support the JDBC LOB API required here (createClob/createBlob/locator)")
 	public void testSaving(SessionFactoryScope scope) {
 		byte[] value = buildRecursively( ARRAY_SIZE, true );
 

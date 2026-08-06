@@ -876,7 +876,7 @@ public class NativeSQLQueriesTest {
 	}
 
 	@Test
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not support the JDBC LOB API required here (createClob/createBlob/locator)")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID rejects the byte[] host variable Hibernate binds here (Cannot coerce host var to type bit varying)")
 	public void testImageTypeInSQLQuery(SessionFactoryScope scope) {
 		// Make sure the last byte is non-zero as Sybase cuts that off
 		byte[] photo = buildLongByteArray( 14999, true );

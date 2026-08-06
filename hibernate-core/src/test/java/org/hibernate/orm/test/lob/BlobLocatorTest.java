@@ -45,7 +45,7 @@ public class BlobLocatorTest {
 	}
 
 	@Test
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not support the JDBC LOB API required here (createClob/createBlob/locator)")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "the CUBRID JDBC driver reports JDBC major version 3, so Hibernate disables contextual LOB creation and no LOB locator is available here")
 	public void testBoundedBlobLocatorAccess(SessionFactoryScope factoryScope) throws Exception {
 		byte[] original = buildByteArray( BLOB_SIZE, true );
 		byte[] changed = buildByteArray( BLOB_SIZE, false );

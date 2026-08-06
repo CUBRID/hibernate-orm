@@ -478,7 +478,8 @@ public class CUBRIDDialect extends Dialect {
 
 	@Override
 	public boolean useConnectionToCreateLob() {
-		//the CUBRID JDBC driver does not support Connection.createBlob()/createClob()
+		//the CUBRID JDBC driver implements createBlob()/createClob() but reports JDBC major
+		//version 3, so Hibernate disables contextual LOB creation regardless of this setting
 		return false;
 	}
 
@@ -520,7 +521,9 @@ public class CUBRIDDialect extends Dialect {
 
 	@Override
 	public ScrollMode defaultScrollMode() {
-		//the CUBRID JDBC driver has no scroll-insensitive cursor; only forward-only is supported
+		//the CUBRID JDBC driver throws from Connection.getSchema(), so Hibernate cannot read the
+		//JDBC metadata and leaves scrollable results disabled; the driver itself does support
+		//scroll-insensitive cursors, so this can be removed once getSchema() returns a value
 		return ScrollMode.FORWARD_ONLY;
 	}
 

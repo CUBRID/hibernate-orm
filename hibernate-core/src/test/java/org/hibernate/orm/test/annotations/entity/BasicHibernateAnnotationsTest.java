@@ -538,7 +538,7 @@ public class BasicHibernateAnnotationsTest {
 			dialectClass = OracleDialect.class,
 			reason = "Oracle does not support LOB comparisons, and data cleanup plus OptimisticLockType.ALL on Forest triggers LOB comparison"
 	)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID JDBC driver does not support the JDBC LOB API required here (createClob/createBlob/locator)")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "a LOB value written through this mapping reads back as NULL on CUBRID")
 	public void testSerialized(SessionFactoryScope scope) {
 		Forest f = new Forest();
 		f.setName( "Shire" );
