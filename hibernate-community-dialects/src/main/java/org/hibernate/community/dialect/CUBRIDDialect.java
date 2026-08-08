@@ -385,6 +385,13 @@ public class CUBRIDDialect extends Dialect {
 	}
 
 	@Override
+	public boolean getDefaultUseGetGeneratedKeys() {
+		//the CUBRID JDBC driver reports support for getGeneratedKeys() but returns a result set
+		//whose internal connection and statement are unset, so read the identity with a select
+		return false;
+	}
+
+	@Override
 	public int getMaxVarcharLength() {
 		return 1_073_741_823;
 	}
