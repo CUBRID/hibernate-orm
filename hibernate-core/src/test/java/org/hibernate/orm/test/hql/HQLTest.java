@@ -3091,6 +3091,7 @@ public class HQLTest {
 
 	@Test
 	@RequiresDialectFeature(feature = DialectFeatureChecks.SupportsRecursiveCtes.class )
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "hibernate-core does not quote a user-specified CTE column alias that is a reserved word (the column list renders 'depth' unquoted); tracked as core follow-up to HHH-20650")
 	public void test_hql_cte_recursive_search_example(SessionFactoryScope factoryScope) {
 		factoryScope.inTransaction( entityManager -> {
 			//tag::hql-cte-recursive-search-example[]

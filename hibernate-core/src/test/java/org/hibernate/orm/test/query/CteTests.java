@@ -504,6 +504,7 @@ public class CteTests {
 
 	@Test
 	@RequiresDialectFeature(feature = DialectFeatureChecks.SupportsRecursiveCtes.class)
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "hibernate-core does not quote a user-specified CTE column alias that is a reserved word (the column list renders 'depth' unquoted); tracked as core follow-up to HHH-20650")
 	public void testRecursiveSearchClause(SessionFactoryScope scope) {
 		scope.inTransaction(
 				session -> {
