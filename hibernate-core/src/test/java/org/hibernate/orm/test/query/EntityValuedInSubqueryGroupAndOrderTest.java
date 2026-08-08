@@ -4,6 +4,7 @@
  */
 package org.hibernate.orm.test.query;
 
+import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.dialect.OracleDialect;
 
 import org.hibernate.testing.orm.junit.DomainModel;
@@ -53,6 +54,7 @@ public class EntityValuedInSubqueryGroupAndOrderTest {
 
 	@Test
 	@SkipForDialect(dialectClass = OracleDialect.class, majorVersion = 23, reason = "Oracle 23c bug")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID 11.2 and 11.3 evaluate an aggregate in a correlated HAVING clause against the first row of the group instead of the whole group; passes on 10.2, 11.0 and 11.4 but the dialect cannot detect the server version")
 	public void testInSubqueryGroupBy(SessionFactoryScope scope) {
 		scope.inTransaction( session -> {
 			final EntityB result = session.createQuery(
@@ -69,6 +71,7 @@ public class EntityValuedInSubqueryGroupAndOrderTest {
 
 	@Test
 	@Jira( "https://hibernate.atlassian.net/browse/HHH-17231" )
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID 11.2 and 11.3 evaluate an aggregate in a correlated HAVING clause against the first row of the group instead of the whole group; passes on 10.2, 11.0 and 11.4 but the dialect cannot detect the server version")
 	public void testInSubqueryGroupByProp(SessionFactoryScope scope) {
 		scope.inTransaction( session -> {
 			final EntityB result = session.createQuery(
@@ -84,6 +87,7 @@ public class EntityValuedInSubqueryGroupAndOrderTest {
 	}
 
 	@Test
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID 11.2 and 11.3 evaluate an aggregate in a correlated HAVING clause against the first row of the group instead of the whole group; passes on 10.2, 11.0 and 11.4 but the dialect cannot detect the server version")
 	public void testTopLevelSelect(SessionFactoryScope scope) {
 		scope.inTransaction( session -> {
 			// Here, the selection is top level so the entity valued path will be expanded

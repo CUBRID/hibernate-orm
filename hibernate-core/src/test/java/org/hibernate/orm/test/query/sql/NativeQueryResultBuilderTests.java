@@ -98,6 +98,7 @@ public class NativeQueryResultBuilderTests {
 	@SkipForDialect(dialectClass = SybaseDialect.class, matchSubTypes = true)
 	@SkipForDialect(dialectClass = OracleDialect.class)
 	@SkipForDialect(dialectClass = InformixDialect.class)
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID returns count() as an int before 11.2, so the implicit native query result type is Integer instead of Long; passes on 11.2+ but the dialect cannot detect the server version")
 	public void fullyImplicitTest2(SessionFactoryScope scope) {
 		scope.inTransaction(
 				session -> {

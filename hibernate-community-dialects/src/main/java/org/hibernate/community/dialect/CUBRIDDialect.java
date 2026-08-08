@@ -609,8 +609,10 @@ public class CUBRIDDialect extends Dialect {
 		functionFactory.dayofweekmonthyear();
 		functionFactory.lastDay();
 		functionFactory.weekQuarter();
-		functionFactory.octetLength();
-		functionFactory.bitLength();
+		//CUBRID's octet_length()/bit_length() only accept character or bit strings,
+		//so measure a LOB argument with clob_length() instead
+		functionFactory.octetLength_pattern( "octet_length(?1)", "clob_length(?1)" );
+		functionFactory.bitLength_pattern( "bit_length(?1)", "clob_length(?1)*8" );
 		functionFactory.md5();
 		//CUBRID's native trunc() truncates numbers and dates only to day granularity, so emulate
 		//datetime truncation (down to second) by formatting via to_char and parsing back with to_datetime
