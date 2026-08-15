@@ -39,6 +39,8 @@ jobs:
         with:
           # `inputs` is empty on a scheduled run, so repeat the dispatch default
           ref: ${{ inputs.ref || 'cubrid-daily' }}
+          # full history, otherwise the merge below has no common ancestor
+          fetch-depth: 0
           persist-credentials: false
       - name: Merge main
         # Fails on conflict, which is the signal that an upstream change collides
