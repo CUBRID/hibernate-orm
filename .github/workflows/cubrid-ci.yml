@@ -1,12 +1,27 @@
 name: CUBRID CI
 
+# Hibernate's own CI does not run community dialects, so this fork runs the
+# full suite against every CUBRID version we support.
+#
+# The scheduled run tests `ref` with main merged into it, which is how we notice
+# an upstream change that breaks CUBRID before it reaches a release. Until the
+# dialect work is merged upstream, `ref` is the branch that carries it; once it
+# is merged, point `ref` at main and drop the merge step.
+
 on:
   workflow_dispatch:
     inputs:
+      ref:
+        description: 'Branch to test'
+        required: false
+        default: 'cubrid-daily'
       gradle-args:
         description: 'Gradle tasks and filters to run against CUBRID'
         required: false
-        default: ':hibernate-core:test'
+        default: 'ciCheck'
+  schedule:
+    # 30 minutes after "Sync upstream" has merged hibernate/main into our main
+    - cron: '30 18 * * *'
 
 permissions: {}
 
@@ -22,7 +37,17 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          # `inputs` is empty on a scheduled run, so repeat the dispatch default
+          ref: ${{ inputs.ref || 'cubrid-daily' }}
           persist-credentials: false
+      - name: Merge main
+        # Fails on conflict, which is the signal that an upstream change collides
+        # with ours. Nothing is pushed: the merge only exists for this run.
+        run: |
+          git fetch --no-tags origin main
+          git -c user.name=github-actions[bot] \
+              -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
+              merge --no-edit FETCH_HEAD
       - name: Reclaim disk space
         run: .github/ci-prerequisites.sh
       - name: Start CUBRID ${{ matrix.cubrid-version }}
@@ -33,8 +58,12 @@ jobs:
           distribution: 'temurin'
           java-version: '25'
       - name: Run tests
-        run: ./gradlew ${{ inputs.gradle-args }} -Pdb=cubrid -Plog-test-progress=true --stacktrace
+        run: |
+          read -ra gradle_args <<< "$GRADLE_ARGS"
+          ./gradlew "${gradle_args[@]}" -Pdb=cubrid -Plog-test-progress=true --stacktrace
+        shell: bash
         env:
+          GRADLE_ARGS: ${{ inputs.gradle-args || 'ciCheck' }}
           MAVEN_MIRROR: "https://maven-central.storage-download.googleapis.com/maven2/"
       - name: Upload test results
         if: always()
