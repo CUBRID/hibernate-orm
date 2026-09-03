@@ -16,6 +16,7 @@ import jakarta.persistence.spi.Discoverable;
 import org.hibernate.CacheMode;
 import jakarta.persistence.QueryFlushMode;
 
+import static java.lang.annotation.ElementType.MODULE;
 import static java.lang.annotation.ElementType.PACKAGE;
 import static java.lang.annotation.ElementType.TYPE;
 import static java.lang.annotation.RetentionPolicy.RUNTIME;
@@ -30,6 +31,10 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
  * <p>
  * Note that the members of this annotation correspond to hints enumerated by
  * {@link org.hibernate.jpa.AvailableHints}.
+ * <p>
+ * This annotation may also be applied to a {@code package-info.java} or {@code module-info.java},
+ * which is a convenient location for query declarations not specific to any
+ * particular entity.
  *
  * @author Carlos Gonzalez-Cadenas
  *
@@ -37,7 +42,7 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
  * @see org.hibernate.annotations.NamedNativeQuery
  * @see jakarta.persistence.NamedQuery
  */
-@Target({TYPE, PACKAGE})
+@Target({TYPE, PACKAGE, MODULE})
 @Retention(RUNTIME)
 @Repeatable(NamedQueries.class)
 @Discoverable

@@ -15,17 +15,23 @@ import jakarta.persistence.TableGenerator;
 
 import static java.lang.annotation.ElementType.FIELD;
 import static java.lang.annotation.ElementType.METHOD;
+import static java.lang.annotation.ElementType.MODULE;
 import static java.lang.annotation.ElementType.PACKAGE;
 import static java.lang.annotation.ElementType.TYPE;
 import static java.lang.annotation.RetentionPolicy.RUNTIME;
 
 /**
  * Generator that picks a strategy based on the {@linkplain Dialect#getNativeValueGenerationStrategy() dialect}.
+ * <p>
+ * When placed on a {@code package-info.java} or {@code module-info.java},
+ * the generator applies to any entity in the package or module whose
+ * identifier uses {@link jakarta.persistence.GeneratedValue @GeneratedValue}
+ * without explicitly specifying a generator.
  *
  * @since 7.0
  * @author Steve Ebersole
  */
-@Target({METHOD, FIELD, TYPE, PACKAGE})
+@Target({METHOD, FIELD, TYPE, PACKAGE, MODULE})
 @Retention(RUNTIME)
 @IdGeneratorType(org.hibernate.id.NativeGenerator.class)
 @Incubating

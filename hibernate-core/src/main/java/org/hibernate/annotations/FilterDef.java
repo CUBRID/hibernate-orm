@@ -10,6 +10,7 @@ import java.lang.annotation.Target;
 
 import org.hibernate.Incubating;
 
+import static java.lang.annotation.ElementType.MODULE;
 import static java.lang.annotation.ElementType.PACKAGE;
 import static java.lang.annotation.ElementType.TYPE;
 import static java.lang.annotation.RetentionPolicy.RUNTIME;
@@ -58,6 +59,10 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
  * <li>it is explicitly enabled by calling {@code enableFilter}, or
  * <li>it is declared {@link #autoEnabled autoEnabled = true}.
  * </ul>
+ * <p>
+ * A filter may be declared on an entity class, in a {@code package-info.java},
+ * or in a {@code module-info.java}. The filter definition is global within the
+ * persistence unit regardless of where it is declared.
  *
  * @author Matthew Inger
  * @author Emmanuel Bernard
@@ -65,7 +70,7 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
  * @see org.hibernate.Filter
  * @see DialectOverride.FilterDefs
  */
-@Target({TYPE, PACKAGE})
+@Target({TYPE, PACKAGE, MODULE})
 @Retention(RUNTIME)
 @Repeatable(FilterDefs.class)
 public @interface FilterDef {
