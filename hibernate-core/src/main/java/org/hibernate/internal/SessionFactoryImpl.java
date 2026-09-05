@@ -113,11 +113,13 @@ import org.hibernate.relational.internal.SchemaManagerImpl;
 import org.hibernate.resource.beans.spi.ManagedBeanRegistry;
 import org.hibernate.resource.transaction.spi.TransactionCoordinatorBuilder;
 import org.hibernate.service.ServiceRegistry;
+import org.hibernate.settings.AdjustableSettings;
+import org.hibernate.settings.internal.AdjustableSettingsImpl;
 import org.hibernate.temporal.spi.ChangesetCoordinator;
 import org.hibernate.service.spi.ServiceRegistryImplementor;
 import org.hibernate.service.spi.SessionFactoryServiceRegistry;
 import org.hibernate.service.spi.SessionFactoryServiceRegistryFactory;
-import org.hibernate.sql.ast.spi.ParameterMarkerStrategy;
+import org.hibernate.sql.spi.ParameterMarkerStrategy;
 import org.hibernate.sql.results.jdbc.spi.JdbcValuesMappingProducerProvider;
 import org.hibernate.stat.spi.StatisticsImplementor;
 import org.hibernate.type.descriptor.WrapperOptions;
@@ -614,6 +616,13 @@ public class SessionFactoryImpl implements SessionFactoryImplementor {
 		catch (RuntimeException e) {
 			return e;
 		}
+	}
+
+	private final transient AdjustableSettings settingsAdjuster = new AdjustableSettingsImpl( this );
+
+	@Override
+	public @Nonnull AdjustableSettings getAdjustableSettings() {
+		return settingsAdjuster;
 	}
 
 	@Nullable
