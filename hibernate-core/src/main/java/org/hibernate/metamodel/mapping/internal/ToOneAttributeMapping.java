@@ -877,6 +877,7 @@ public class ToOneAttributeMapping
 		// Otherwise we need to join to the associated entity table(s)
 		final boolean forceJoin = hasNotFoundAction()
 				|| entityMappingType.getSoftDeleteMapping() != null
+				|| entityMappingType.hasWhereRestrictions()
 				|| cardinality == ONE_TO_ONE && isNullable();
 		canUseParentTableGroup = ! forceJoin
 				&& sideNature == ForeignKeyDescriptor.Nature.KEY
@@ -1912,6 +1913,10 @@ public class ToOneAttributeMapping
 				SqlAstJoinType.LEFT
 		);
 		if ( compatibleTableGroup != null ) {
+			creationState.getSqlAstCreationState().getFromClauseAccess().registerTableGroup(
+					fetchablePath,
+					compatibleTableGroup
+			);
 			return compatibleTableGroup;
 		}
 		// We have to create the table group that points to the target so that table reference resolving works
@@ -2224,7 +2229,7 @@ public class ToOneAttributeMapping
 					if ( associatedEntityMappingType.getEntityPersister().hasFilterForLoadByKey() ) {
 						associatedEntityMappingType.applyBaseRestrictions(
 								join::applyPredicate,
-								tableGroup,
+								lazyTableGroup,
 								true,
 								creationState.getLoadQueryInfluencers().getEnabledFilters(),
 								creationState.applyOnlyLoadByKeyFilters(),
@@ -2234,7 +2239,7 @@ public class ToOneAttributeMapping
 					}
 					associatedEntityMappingType.applyWhereRestrictions(
 							join::applyPredicate,
-							tableGroup,
+							lazyTableGroup,
 							true,
 							creationState
 					);
