@@ -15,6 +15,7 @@ import org.hibernate.type.SqlTypes;
 import org.hibernate.type.descriptor.WrapperOptions;
 import org.hibernate.type.descriptor.java.JavaType;
 import org.hibernate.type.descriptor.jdbc.JdbcType;
+import org.hibernate.type.descriptor.jdbc.JavaTimeJdbcType;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -143,7 +144,7 @@ public class OsonDocumentWriter implements JsonDocumentWriter {
 								JavaType<T> javaType,
 								JdbcType jdbcType,
 								WrapperOptions options) {
-		switch ( jdbcType.getDefaultSqlTypeCode() ) {
+		switch ( JavaTimeJdbcType.getPhysicalJdbcTypeCode( jdbcType ) ) {
 			case SqlTypes.TINYINT:
 			case SqlTypes.SMALLINT:
 			case SqlTypes.INTEGER:

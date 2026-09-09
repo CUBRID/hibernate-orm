@@ -10,11 +10,13 @@ import org.hibernate.dialect.temporaltype.spi.CurrentTimestampSelection;
 
 import org.hibernate.dialect.temporaltype.spi.TemporalOperationSupport;
 import org.hibernate.dialect.temporaltype.spi.TemporalOperationSupports;
+import org.hibernate.dialect.temporaltype.spi.TemporalValueSemantics;
 
 import org.hibernate.dialect.temporaltype.spi.TemporalFormatSupport;
 
 import org.hibernate.dialect.temporaltype.spi.CurrentTemporalSupport;
 
+import org.hibernate.dialect.temporaltype.spi.TemporalValueSemantics;
 import org.hibernate.dialect.type.spi.ObjectNullBindingStrategy;
 
 import org.hibernate.SPI;
@@ -209,11 +211,18 @@ public class SQLServerDialect extends AbstractTransactSQLDialect implements Curr
 
 	@Override
 	@SPI({ IMPLEMENT, SUPPLY })
+	public TemporalValueSemantics getTemporalValueSemantics() {
+		return TemporalValueSemantics.ROUND_MAX_WITH_OFFSET_LITERALS;
+	}
+
+	@Override
+	@SPI({ IMPLEMENT, SUPPLY })
 	public CurrentTemporalSupport getCurrentTemporalSupport() {
 		return this;
 	}
 	private final TypeSizingProfile typeSizingProfile = TypeSizingProfile.builder( super.getTypeSizingProfile() )
 			.defaultTimestampPrecision( 7 )
+			.maxTimestampPrecision( 7 )
 			.defaultLobLength( Length.LONG32 )
 			.maxVarcharLength( 8000 ).maxVarcharCapacity( 8000 )
 			.maxNVarcharLength( 4000 ).maxNVarcharCapacity( 4000 )

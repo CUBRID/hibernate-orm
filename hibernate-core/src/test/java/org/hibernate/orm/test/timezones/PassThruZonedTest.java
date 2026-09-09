@@ -10,7 +10,6 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoField;
-import java.time.temporal.ChronoUnit;
 
 import org.hibernate.cfg.AvailableSettings;
 import org.hibernate.dialect.Dialect;
@@ -32,7 +31,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @DomainModel(annotatedClasses = PassThruZonedTest.Zoned.class)
 @SessionFactory
-@ServiceRegistry(settings = @Setting(name = AvailableSettings.TIMEZONE_DEFAULT_STORAGE, value = "NORMALIZE"))
+@ServiceRegistry(settings = {
+		@Setting(name = AvailableSettings.TIMEZONE_DEFAULT_STORAGE, value = "NORMALIZE"),
+		@Setting(name = AvailableSettings.JAVA_TIME_USE_DIRECT_JDBC, value = "false")
+})
 public class PassThruZonedTest {
 
 	@Test void test(SessionFactoryScope scope) {
@@ -45,10 +47,6 @@ public class PassThruZonedTest {
 					.with( ChronoField.NANO_OF_SECOND, 0L );
 			nowOffset = OffsetDateTime.now().withOffsetSameInstant( ZoneOffset.ofHours(3) )
 					.with( ChronoField.NANO_OF_SECOND, 0L );
-		}
-		else if ( dialect.getTypeSizingProfile().defaultTimestampPrecision() == 6 ) {
-			nowZoned = ZonedDateTime.now().withZoneSameInstant( ZoneId.of("CET") ).truncatedTo( ChronoUnit.MICROS );
-			nowOffset = OffsetDateTime.now().withOffsetSameInstant( ZoneOffset.ofHours(3) ).truncatedTo( ChronoUnit.MICROS );
 		}
 		else {
 			nowZoned = ZonedDateTime.now().withZoneSameInstant( ZoneId.of("CET") );

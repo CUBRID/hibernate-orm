@@ -14,6 +14,7 @@ import org.hibernate.type.descriptor.java.JdbcTimestampJavaType;
 import org.hibernate.type.descriptor.java.OffsetDateTimeJavaType;
 import org.hibernate.type.descriptor.java.PrimitiveByteArrayJavaType;
 import org.hibernate.type.descriptor.jdbc.JdbcType;
+import org.hibernate.type.descriptor.jdbc.JavaTimeJdbcType;
 
 import java.sql.SQLException;
 
@@ -25,8 +26,16 @@ public class OsonValueJDBCTypeAdapter implements JsonValueJDBCTypeAdapter {
 	@Override
 	public Object fromValue(JavaType<?> jdbcJavaType, JdbcType jdbcType, JsonDocumentReader source, WrapperOptions options)
 			throws SQLException {
+		final int physicalJdbcTypeCode = JavaTimeJdbcType.getPhysicalJdbcTypeCode( jdbcType );
+		if ( jdbcType instanceof JavaTimeJdbcType
+				&& ( physicalJdbcTypeCode == SqlTypes.TIME
+						|| physicalJdbcTypeCode == SqlTypes.TIME_WITH_TIMEZONE
+						|| physicalJdbcTypeCode == SqlTypes.TIME_UTC ) ) {
+			final String string = source.getStringValue();
+			return JavaTimeJdbcType.fromEncodedString( jdbcJavaType, string, 0, string.length() );
+		}
 		Object valueToBeWrapped = null;
-		switch ( jdbcType.getDefaultSqlTypeCode() ) {
+		switch ( physicalJdbcTypeCode ) {
 			case SqlTypes.BINARY:
 			case SqlTypes.VARBINARY:
 			case SqlTypes.LONGVARBINARY:

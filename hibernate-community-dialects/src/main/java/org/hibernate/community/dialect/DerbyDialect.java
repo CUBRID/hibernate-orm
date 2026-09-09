@@ -21,6 +21,8 @@ import static org.hibernate.SPI.Role.IMPLEMENT;
 import static org.hibernate.SPI.Role.SUPPLY;
 import static org.hibernate.SPI.Role.USE;
 import org.hibernate.dialect.type.spi.DdlTypeBuilder;
+import org.hibernate.dialect.type.spi.DirectJavaTimeJdbcSupport;
+import org.hibernate.dialect.type.spi.DirectJavaTimeJdbcSupports;
 
 import org.hibernate.dialect.type.spi.StandardDdlTypes;
 
@@ -143,6 +145,11 @@ import static org.hibernate.type.SqlTypes.VARCHAR;
 public class DerbyDialect extends Dialect implements CurrentTemporalSupport, TemporalFormatSupport, TemporalOperationSupport {
 
 	@Override
+	public DirectJavaTimeJdbcSupport getDirectJavaTimeJdbcSupport() {
+		return DirectJavaTimeJdbcSupports.none();
+	}
+
+	@Override
 	@SPI({ IMPLEMENT, SUPPLY })
 	public TemporalOperationSupport getTemporalOperationSupport() {
 		return this;
@@ -168,7 +175,9 @@ public class DerbyDialect extends Dialect implements CurrentTemporalSupport, Tem
 			name -> new String[] { "drop schema " + name + " restrict" }
 	);
 	private final TypeSizingProfile typeSizingProfile = TypeSizingProfile.builder( super.getTypeSizingProfile() )
-			.defaultDecimalPrecision( 31 ).defaultTimestampPrecision( 9 )
+			.defaultDecimalPrecision( 31 )
+			.defaultTimestampPrecision( 9 )
+			.maxTimestampPrecision( 9 )
 			.floatPrecision( 23 ).doublePrecision( 52 )
 			.maxVarcharLength( 32_672 ).maxVarcharCapacity( 32_700 )
 			.maxNVarcharLength( 32_672 ).maxNVarcharCapacity( 32_672 )
