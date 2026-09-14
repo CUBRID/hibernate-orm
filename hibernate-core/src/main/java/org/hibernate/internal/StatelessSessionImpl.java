@@ -1287,6 +1287,10 @@ public class StatelessSessionImpl
 	}
 
 	private void doRefresh(String entityName, Object entity, LockMode lockMode) {
+		if ( getSessionFactoryOptions().isJpaBootstrap()
+				&& getNullSafeLockMode( lockMode ) != LockMode.NONE ) {
+			checkTransactionNeededForUpdateOperation( "No active transaction" );
+		}
 		final var persister = getEntityPersister( entityName, entity );
 		final Object id = persister.getIdentifier( entity, this );
 		if ( SESSION_LOGGER.isTraceEnabled() ) {
@@ -1806,7 +1810,7 @@ public class StatelessSessionImpl
 	}
 
 	private LockMode getNullSafeLockMode(LockMode lockMode) {
-		return lockMode == null ? LockMode.NONE : lockMode;
+		return lockMode == null ? LockMode.NONE : StatelessLocking.getEffectiveLockMode( lockMode );
 	}
 
 	protected Object lockCacheItem(Object id, Object previousVersion, EntityPersister persister) {

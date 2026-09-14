@@ -52,6 +52,7 @@ import org.hibernate.engine.jdbc.dialect.spi.DialectResolutionInfo;
 import org.hibernate.exception.ConstraintViolationException;
 import org.hibernate.exception.ConstraintViolationException.ConstraintKind;
 import org.hibernate.exception.LockTimeoutException;
+import org.hibernate.exception.LockAcquisitionException;
 import org.hibernate.exception.spi.SQLExceptionConversionDelegate;
 import org.hibernate.exception.spi.TemplatedViolatedConstraintNameExtractor;
 import org.hibernate.exception.spi.ViolatedConstraintNameExtractor;
@@ -729,12 +730,24 @@ public class SybaseASEDialect extends SybaseDialect implements CurrentTemporalSu
 			} );
 
 	@Override
+	public boolean causesRollback(SQLException sqlException) {
+		// ASE rolls back the transaction on either a deadlock or a lock wait timeout.
+		return switch ( extractErrorCode( sqlException ) ) {
+			case 1205, 12205 -> true;
+			default -> false;
+		};
+	}
+
+	@Override
 	@SPI({ IMPLEMENT, SUPPLY })
 	public SQLExceptionConversionDelegate buildSQLExceptionConversionDelegate() {
 		return (sqlException, message, sql) -> {
+			final int errorCode = extractErrorCode( sqlException );
+			if ( errorCode == 1205 ) {
+				return new LockAcquisitionException( message, sqlException, sql );
+			}
 			final String sqlState = extractSqlState( sqlException );
 			if ( sqlState != null ) {
-				final int errorCode = extractErrorCode( sqlException );
 				return switch ( sqlState ) {
 					case "HY008" ->
 						new QueryTimeoutException( message, sqlException, sql );

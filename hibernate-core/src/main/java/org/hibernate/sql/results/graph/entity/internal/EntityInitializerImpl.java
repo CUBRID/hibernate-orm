@@ -1432,8 +1432,19 @@ public class EntityInitializerImpl
 					final var entryLockMode = entityEntry.getLockMode();
 					if ( entryLockMode.lessThan( data.lockMode ) ) {
 						//we only check the version when _upgrading_ lock modes
-						if ( versionAssembler != null && entryLockMode != LockMode.NONE ) {
+						if ( versionAssembler != null ) {
 							checkVersion( data, entityEntry, rowProcessingState );
+						}
+						if ( data.lockMode.requiresVersion() && data.entityHolder.getEntityInitializer() == null ) {
+							// An already loaded entity will not receive a post-load event,
+							// so perform the version check or increment required by the lock mode.
+							data.concreteDescriptor.lock(
+									entityEntry.getId(),
+									entityEntry.getVersion(),
+									data.entityInstanceForNotify,
+									data.lockMode,
+									rowProcessingState.getSession()
+							);
 						}
 						//we need to upgrade the lock mode to the mode requested
 						entityEntry.setLockMode( data.lockMode );
@@ -1593,9 +1604,14 @@ public class EntityInitializerImpl
 	}
 
 	protected void registerReloadedEntity(EntityInitializerData data) {
+		final var processingState = data.getRowProcessingState().getJdbcValuesSourceProcessingState();
+		final var loadedValuesCollector = processingState.getLoadedValuesCollector();
+		if ( loadedValuesCollector != null && data.entityHolder.getEntityInitializer() == null ) {
+			loadedValuesCollector.registerEntity( getNavigablePath(), data.concreteDescriptor, data.entityKey, true );
+		}
 		if ( data.hasCallbackActions ) {
 			// This is only needed for follow-on locking, so skip registering the entity if there is no callback
-			data.entityHolder.markAsReloaded( data.getRowProcessingState().getJdbcValuesSourceProcessingState() );
+			data.entityHolder.markAsReloaded( processingState );
 		}
 	}
 

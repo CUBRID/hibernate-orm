@@ -4,6 +4,10 @@
  */
 package org.hibernate.community.dialect;
 
+import java.sql.SQLException;
+
+import static org.hibernate.jdbc.spi.JdbcExceptionHelper.extractErrorCode;
+
 import org.hibernate.dialect.identifier.spi.KeywordRegistration;
 
 import org.hibernate.dialect.temporaltype.spi.CurrentTimestampSelection;
@@ -413,7 +417,9 @@ public class CUBRIDDialect extends Dialect implements CurrentTemporalSupport, Te
 			RowLockStrategy.NONE,
 			LockTimeoutType.NONE,
 			OuterJoinLockingType.FULL,
-			ConnectionLockTimeoutStrategy.NONE
+			ConnectionLockTimeoutStrategy.NONE,
+			// CUBRID uses multiversion concurrency control
+			false
 	);
 
 	@Override
@@ -674,6 +680,12 @@ public class CUBRIDDialect extends Dialect implements CurrentTemporalSupport, Te
 				.feature( RowValueSupport.Feature.IN_SUBQUERY, false )
 				.feature( RowValueSupport.Feature.QUANTIFIED_COMPARISON, false )
 				.build();
+	}
+
+	@Override
+	public boolean causesRollback(SQLException sqlException) {
+		// ER_LK_UNILATERALLY_ABORTED identifies the transaction chosen as a deadlock victim.
+		return extractErrorCode( sqlException ) == -72;
 	}
 
 }
