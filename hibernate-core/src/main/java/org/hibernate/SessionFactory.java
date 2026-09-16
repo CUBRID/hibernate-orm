@@ -15,7 +15,7 @@ import jakarta.persistence.SynchronizationType;
 import jakarta.persistence.TypedQuery;
 import jakarta.persistence.TypedQueryReference;
 import org.hibernate.boot.spi.SessionFactoryOptions;
-import org.hibernate.engine.spi.FilterDefinition;
+import org.hibernate.engine.FilterDefinition;
 import org.hibernate.graph.GraphParser;
 import org.hibernate.graph.InvalidGraphException;
 import org.hibernate.graph.RootGraph;
@@ -169,7 +169,7 @@ public interface SessionFactory extends EntityManagerFactory, Referenceable, Ser
 	 *
 	 * @since 8.0
 	 */
-	@Incubating @Nonnull
+	@Incubating(since = "8.0", group = "adjustable-settings") @Nonnull
 	AdjustableSettings getAdjustableSettings();
 
 	/**
@@ -583,7 +583,7 @@ public interface SessionFactory extends EntityManagerFactory, Referenceable, Ser
 	 *
 	 * @since 7.0
 	 */
-	@Incubating
+	@Incubating(since = "7.1")
 	@Nonnull
 	<T> RootGraph<T> parseEntityGraph(@Nonnull String rootEntityName, @Nonnull CharSequence graphText);
 
@@ -600,7 +600,7 @@ public interface SessionFactory extends EntityManagerFactory, Referenceable, Ser
 	 *
 	 * @since 7.0
 	 */
-	@Incubating
+	@Incubating(since = "7.1")
 	@Nonnull
 	<T> RootGraph<T> parseEntityGraph(@Nonnull CharSequence graphText);
 
@@ -620,12 +620,7 @@ public interface SessionFactory extends EntityManagerFactory, Referenceable, Ser
 	 * @param filterName The name of the filter for which to obtain the definition.
 	 * @return The filter definition.
 	 * @throws HibernateException If no filter defined with the given name.
-	 *
-	 * @deprecated There is no plan to remove this operation, but its use should be
-	 *             avoided since {@link FilterDefinition} is an SPI type, and so this
-	 *             operation is a layer-breaker.
 	 */
-	@Deprecated(since = "6.2")
 	@Nonnull
 	FilterDefinition getFilterDefinition(@Nonnull String filterName) throws HibernateException;
 
@@ -669,7 +664,7 @@ public interface SessionFactory extends EntityManagerFactory, Referenceable, Ser
 	 *
 	 * @since 7.0
 	 */
-	@Incubating
+	@Incubating(since = "7.0")
 	@Nonnull
 	<R> TypedQueryReference<R> addNamedQuery(@Nonnull String name, @Nonnull TypedQuery<R> query);
 
@@ -698,11 +693,13 @@ public interface SessionFactory extends EntityManagerFactory, Referenceable, Ser
 	 *
 	 * @return The special options used to build the factory.
 	 *
-	 * @deprecated There is no plan to remove this operation, but its use should be
-	 *             avoided since {@link SessionFactoryOptions} is an SPI type, and so
-	 *             this operation is a layer-breaker.
+	 * @deprecated This legacy SPI access point is marked for removal. Instead, unwrap
+	 *             this factory to {@link org.hibernate.engine.spi.SessionFactoryImplementor}
+	 *             and call {@link org.hibernate.engine.spi.SessionFactoryImplementor#getSessionFactoryOptions()}:
+	 *             {@code unwrap(SessionFactoryImplementor.class).getSessionFactoryOptions()}.
 	 */
-	@Deprecated(since = "6.2")
+	@Deprecated(since = "6.2", forRemoval = true)
+	@SPI(SPI.Role.USE)
 	@Nonnull
 	SessionFactoryOptions getSessionFactoryOptions();
 }

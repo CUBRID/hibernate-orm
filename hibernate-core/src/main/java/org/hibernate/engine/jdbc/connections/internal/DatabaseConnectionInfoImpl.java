@@ -257,7 +257,7 @@ public class DatabaseConnectionInfoImpl implements DatabaseConnectionInfo {
 				\tMinimum pool size: %s
 				\tMaximum pool size: %s"""
 				.formatted(
-						handleEmpty( jdbcUrl ),
+						handleEmpty( jdbcUrlForLogging() ),
 						handleEmpty( jdbcDriver ),
 						handleEmpty( dialectClass ),
 						handleEmpty( dialectVersion ),
@@ -270,6 +270,18 @@ public class DatabaseConnectionInfoImpl implements DatabaseConnectionInfo {
 						handleEmpty( poolMinSize ),
 						handleEmpty( poolMaxSize )
 				);
+	}
+
+	private String jdbcUrlForLogging() {
+		if ( jdbcUrl != null && ( jdbcUrl.startsWith( "jdbc:mariadb:" )
+				|| ( jdbcUrl.startsWith( "jdbc:mysql:" ) && jdbcUrl.contains( "permitMysqlScheme" ) ) ) ) {
+			// MariaDB injects the password into the JDBC URL, so we try to remove it for logging
+			final int queryStart = jdbcUrl.indexOf( '?' );
+			return queryStart < 0 ? jdbcUrl : jdbcUrl.substring( 0, queryStart );
+		}
+		else {
+			return jdbcUrl;
+		}
 	}
 
 	private static String handleEmpty(String value) {

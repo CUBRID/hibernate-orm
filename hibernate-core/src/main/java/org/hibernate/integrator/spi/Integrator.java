@@ -8,6 +8,8 @@ import org.hibernate.Incubating;
 import org.hibernate.boot.Metadata;
 import org.hibernate.boot.spi.BootstrapContext;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
+import org.hibernate.models.spi.ClassDetailsRegistry;
+import org.hibernate.models.spi.ModuleDetailsRegistry;
 import org.hibernate.resource.beans.spi.ManagedBeanRegistry;
 import org.hibernate.service.JavaServiceLoadable;
 import org.hibernate.service.spi.SessionFactoryServiceRegistry;
@@ -95,13 +97,27 @@ public interface Integrator {
 	 *
 	 * @since 8.0
 	 */
-	@Incubating
+	@Incubating(since = "8.0")
 	interface Context {
 		/**
 		 * Access to managed beans using the bootstrap-time CDI access policy.
 		 */
 		default ManagedBeanRegistry getManagedBeanRegistry() {
 			return getBootstrapContext().getManagedBeanRegistry();
+		}
+
+		/**
+		 * Access to the {@code hibernate-models} {@linkplain ClassDetailsRegistry}
+		 */
+		default ClassDetailsRegistry getClassDetailsRegistry() {
+			return getBootstrapContext().getModelsContext().getClassDetailsRegistry();
+		}
+
+		/**
+		 * Access to {@code hibernate-models} {@linkplain ModuleDetailsRegistry}.
+		 */
+		default ModuleDetailsRegistry getModuleDetailsRegistry() {
+			return getBootstrapContext().getModelsContext().getModuleDetailsRegistry();
 		}
 
 		/**

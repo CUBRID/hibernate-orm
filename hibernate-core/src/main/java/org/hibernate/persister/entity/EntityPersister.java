@@ -22,6 +22,7 @@ import org.hibernate.cache.spi.access.NaturalIdDataAccess;
 import org.hibernate.cache.spi.entry.CacheEntry;
 import org.hibernate.cache.spi.entry.CacheEntryStructure;
 import org.hibernate.cascade.spi.CascadeStyle;
+import org.hibernate.cascade.spi.CascadeStyles;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.engine.spi.SessionImplementor;
 import org.hibernate.engine.spi.SharedSessionContractImplementor;
@@ -841,6 +842,15 @@ public interface EntityPersister extends EntityMappingType, EntityMutationTarget
 	CascadeStyle[] getPropertyCascadeStyles();
 
 	/**
+	 * Get the cascade style of the identifier property, or
+	 * {@link CascadeStyles#NONE NONE}
+	 * if the identifier has no cascading.
+	 */
+	default CascadeStyle getIdentifierCascadeStyle() {
+		return CascadeStyles.NONE;
+	}
+
+	/**
 	 * Get the identifier type
 	 */
 	Type getIdentifierType();
@@ -1304,10 +1314,10 @@ public interface EntityPersister extends EntityMappingType, EntityMutationTarget
 
 	boolean canUseReferenceCacheEntries();
 
-	@Incubating
+	@Incubating(since = "6.5")
 	boolean useShallowQueryCacheLayout();
 
-	@Incubating
+	@Incubating(since = "6.5")
 	boolean storeDiscriminatorInShallowQueryCacheLayout();
 
 	boolean hasFilterForLoadByKey();
@@ -1315,7 +1325,7 @@ public interface EntityPersister extends EntityMappingType, EntityMutationTarget
 	/**
 	 * @return Metadata for each unique key defined
 	 */
-	@Incubating
+	@Incubating(since = "6.2")
 	Iterable<UniqueKeyEntry> uniqueKeyEntries();
 
 	/**
@@ -1501,7 +1511,7 @@ public interface EntityPersister extends EntityMappingType, EntityMutationTarget
 	@Deprecated(since = "7.0", forRemoval = true)
 	String[] toColumns(String propertyName);
 
-	@Incubating
+	@Incubating(since = "7.4")
 	boolean excludedFromTemporalVersioning(int[] dirtyAttributeIndexes, boolean hasDirtyCollection);
 
 	boolean isSharedColumn(String columnExpression);
