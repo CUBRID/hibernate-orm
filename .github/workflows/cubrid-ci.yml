@@ -33,7 +33,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        cubrid-version: [ "10.2", "11.0", "11.2", "11.3", "11.4" ]
+        include:
+          - { cubrid-version: "10.2", image: "docker.io/cubrid/cubrid:10.2" }
+          - { cubrid-version: "11.0", image: "docker.io/cubrid/cubrid:11.0" }
+          - { cubrid-version: "11.2", image: "docker.io/cubrid/cubrid:11.2" }
+          - { cubrid-version: "11.3", image: "docker.io/cubrid/cubrid:11.3" }
+          - { cubrid-version: "11.4", image: "docker.io/cubrid/cubrid:11.4" }
+          # The development build, tested with the driver shipped inside it rather than
+          # the released one, so an engine or driver regression surfaces before release.
+          - { cubrid-version: "nightly", image: "ghcr.io/srltas/cubrid-nightly:latest", bundled-driver: true }
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -53,7 +61,23 @@ jobs:
       - name: Reclaim disk space
         run: .github/ci-prerequisites.sh
       - name: Start CUBRID ${{ matrix.cubrid-version }}
-        run: CUBRID_IMAGE=docker.io/cubrid/cubrid:${{ matrix.cubrid-version }} ./db.sh cubrid
+        run: CUBRID_IMAGE=${{ matrix.image }} ./db.sh cubrid
+      - name: Take the JDBC driver from the image
+        if: matrix.bundled-driver
+        # `cubrid_jdbc.jar` is a stable symlink whose target carries the driver version,
+        # and that target is already named the way a flatDir repository expects. The
+        # released driver is a different version, so without the catalog edit the build
+        # would resolve that one from Maven Central instead of the one extracted here.
+        run: |
+          set -euo pipefail
+          jar=$(docker exec cubrid sh -lc 'readlink -f "$CUBRID"/jdbc/cubrid_jdbc.jar')
+          version=${jar##*/cubrid-jdbc-}
+          version=${version%.jar}
+          mkdir -p "$RUNNER_TEMP/cubrid-jdbc"
+          docker cp "cubrid:$jar" "$RUNNER_TEMP/cubrid-jdbc/cubrid-jdbc-$version.jar"
+          sed -i "s/^cubrid = .*/cubrid = \"$version\"/" gradle/libs.versions.toml
+          echo "ADDITIONAL_REPO=$RUNNER_TEMP/cubrid-jdbc" >> "$GITHUB_ENV"
+          echo "driver $version"
       - name: Set up Java 25
         uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
         with:
