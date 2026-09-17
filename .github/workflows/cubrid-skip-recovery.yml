@@ -21,8 +21,9 @@ on:
         required: false
         default: 'ghcr.io/srltas/cubrid-nightly:latest'
   schedule:
-    # Weekly. The skip set only moves when the engine or the driver does.
-    - cron: '0 20 * * 0'
+    # Daily, matching the image: a new CUBRID development build lands every night, and the
+    # point of the number is to see a driver or engine fix show up the day after it lands.
+    - cron: '0 20 * * *'
 
 permissions: {}
 
