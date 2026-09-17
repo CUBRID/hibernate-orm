@@ -6,6 +6,7 @@ package org.hibernate.action.internal;
 
 import jakarta.annotation.Nonnull;
 import jakarta.annotation.Nullable;
+import org.hibernate.engine.internal.RootTenantCache;
 import org.hibernate.AssertionFailure;
 import org.hibernate.CacheMode;
 import org.hibernate.cache.CacheException;
@@ -102,6 +103,7 @@ public class EntityUpdateAction extends EntityAction {
 		dirtyFields = dirtyProperties;
 		this.hasDirtyCollection = hasDirtyCollection;
 		this.rowId = rowId;
+		RootTenantCache.invalidateEntity( id, persister, session );
 
 		final var naturalIdMapping = persister.getNaturalIdMapping();
 		previousNaturalIdValues =
@@ -391,6 +393,16 @@ public class EntityUpdateAction extends EntityAction {
 			if ( persister.hasUpdateGeneratedProperties() ) {
 				// this entity defines property generation, so process those generated values
 				persister.processUpdateGeneratedProperties( id, instance, state, generatedValues, session );
+			}
+			final var versionMapping = persister.getVersionMapping();
+			if ( generatedValues != null && versionMapping != null ) {
+				final Object resolvedVersion = generatedValues.getGeneratedValue( versionMapping );
+				if ( resolvedVersion != null ) {
+					final int versionPropertyIndex = persister.getVersionPropertyIndex();
+					state[versionPropertyIndex] = resolvedVersion;
+					persister.setValue( instance, versionPropertyIndex, resolvedVersion );
+					nextVersion = resolvedVersion;
+				}
 			}
 			// have the entity entry doAfterTransactionCompletion post-update processing,
 			// passing it the update state and the new version (if there is one)

@@ -4,6 +4,10 @@
  */
 package org.hibernate.internal;
 
+import static org.hibernate.engine.internal.TenantIdHelper.MissingRowPolicy.ALLOW;
+
+import static org.hibernate.engine.internal.TenantIdHelper.MissingRowPolicy.THROW;
+
 import jakarta.annotation.Nonnull;
 import jakarta.annotation.Nullable;
 import jakarta.persistence.CacheRetrieveMode;
@@ -15,6 +19,8 @@ import jakarta.persistence.FindOption;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.PersistenceException;
 import jakarta.transaction.SystemException;
+import org.hibernate.engine.internal.TenantIdHelper;
+import org.hibernate.engine.internal.RootTenantCache;
 import org.hibernate.AssertionFailure;
 import org.hibernate.CacheMode;
 import org.hibernate.FlushMode;
@@ -67,6 +73,7 @@ import org.hibernate.event.spi.PreUpdateEvent;
 import org.hibernate.event.spi.PreUpsertEvent;
 import org.hibernate.exception.ConstraintViolationException;
 import org.hibernate.generator.BeforeExecutionGenerator;
+import org.hibernate.generator.values.GeneratedValues;
 import org.hibernate.graph.GraphSemantic;
 import org.hibernate.graph.spi.RootGraphImplementor;
 import org.hibernate.id.IdentifierGenerationException;
@@ -79,6 +86,7 @@ import org.hibernate.jpa.event.spi.CallbackType;
 import org.hibernate.loader.ast.internal.LoaderHelper;
 import org.hibernate.loader.ast.spi.CascadingFetchProfile;
 import org.hibernate.loader.internal.CacheLoadHelper;
+import org.hibernate.metamodel.mapping.SingularAttributeMapping;
 import org.hibernate.persister.collection.CollectionPersister;
 import org.hibernate.persister.entity.EntityPersister;
 import org.hibernate.query.spi.QueryParameterBindings;
@@ -584,6 +592,10 @@ public class StatelessSessionImpl
 		checkNotReadOnly();
 		final var persister = getEntityPersister( entityName, entity );
 		final Object id = persister.getIdentifier( entity, this );
+		TenantIdHelper.validateAssignedTenantId( entity, id, persister, this );
+		if ( persister.hasMultipleTables() || persister.hasOwnedCollections() ) {
+			TenantIdHelper.checkStoredTenantOwnership( id, persister, this, THROW );
+		}
 		final Object version = persister.getVersion( entity );
 		if ( !firePreDelete(entity, id, persister) ) {
 			runInterceptorCallback(
@@ -682,7 +694,12 @@ public class StatelessSessionImpl
 	private void doUpdate(String entityName, Object entity) {
 		checkNotReadOnly();
 		final var persister = getEntityPersister( entityName, entity );
+		checkLobVersioning( persister );
 		final Object id = persister.getIdentifier( entity, this );
+		TenantIdHelper.validateAssignedTenantId( entity, id, persister, this );
+		if ( persister.hasMultipleTables() || persister.hasOwnedCollections() ) {
+			TenantIdHelper.checkStoredTenantOwnership( id, persister, this, THROW );
+		}
 		final Object[] state = persister.getValues( entity );
 		final Object oldVersion;
 		if ( persister.isVersioned() ) {
@@ -702,7 +719,10 @@ public class StatelessSessionImpl
 			final var event = eventMonitor.beginEntityUpdateEvent();
 			boolean success = false;
 			try {
-				persister.getUpdateCoordinator().update( entity, id, null, state, oldVersion, null, null, false, this );
+				final var generatedValues =
+						persister.getUpdateCoordinator()
+								.update( entity, id, null, state, oldVersion, null, null, false, this );
+				applyDatabaseResolvedVersion( entity, state, persister, generatedValues );
 				success = true;
 			}
 			finally {
@@ -714,6 +734,60 @@ public class StatelessSessionImpl
 			final var statistics = getStatistics();
 			if ( statistics.isStatisticsEnabled() ) {
 				statistics.updateEntity( persister.getEntityName() );
+			}
+		}
+	}
+
+	private static void checkLobVersioning(EntityPersister persister) {
+		if ( !persister.isVersioned() || persister.isVersionPropertyGenerated() ) {
+			return;
+		}
+		final var updateability = persister.getPropertyUpdateability();
+		final var versionability = persister.getPropertyVersionability();
+		final var generators = persister.getGenerators();
+		boolean hasExcludedProperty = false;
+		String lobAttribute = null;
+		for ( int i = 0; i < updateability.length; i++ ) {
+			final var generator = generators[i];
+			final boolean generatedOnUpdate = generator != null
+					&& generator.generatedOnExecution() && generator.generatesOnUpdate();
+			if ( generatedOnUpdate && versionability[i] ) {
+				// Update-generated versioned values already require an ordinary version increment.
+				return;
+			}
+			if ( updateability[i] || generatedOnUpdate ) {
+				if ( !versionability[i] ) {
+					hasExcludedProperty = true;
+				}
+				else if ( persister.getAttributeMapping( i ) instanceof SingularAttributeMapping attribute ) {
+					for ( int j = 0; j < attribute.getJdbcTypeCount(); j++ ) {
+						final var selectable = attribute.getSelectable( j );
+						if ( !selectable.isFormula() && selectable.isUpdateable()
+								&& selectable.getJdbcMapping().getJdbcType().isLob() ) {
+							lobAttribute = attribute.getAttributeName();
+						}
+					}
+				}
+			}
+		}
+		if ( hasExcludedProperty && lobAttribute != null ) {
+			throw new HibernateException( "Cannot update entity '" + persister.getEntityName()
+					+ "' without a snapshot: non-excluded LOB attribute '" + lobAttribute
+					+ "' prevents honoring @ExcludedFromVersioning" );
+		}
+	}
+
+	private static void applyDatabaseResolvedVersion(
+			Object entity,
+			Object[] state,
+			EntityPersister persister,
+			GeneratedValues generatedValues) {
+		final var versionMapping = persister.getVersionMapping();
+		if ( generatedValues != null && versionMapping != null ) {
+			final Object resolvedVersion = generatedValues.getGeneratedValue( versionMapping );
+			if ( resolvedVersion != null ) {
+				setVersion( state, resolvedVersion, persister );
+				persister.setValue( entity, persister.getVersionPropertyIndex(), resolvedVersion );
 			}
 		}
 	}
@@ -790,8 +864,14 @@ public class StatelessSessionImpl
 	private void doUpsert(String entityName, Object entity) {
 		checkNotReadOnly();
 		final var persister = getEntityPersister( entityName, entity );
+		TenantIdHelper.initializeIdentifierTenant( entity, persister, this );
 		final Object id = idToUpsert( entity, persister );
+		TenantIdHelper.validateIdentifierTenant( id, persister, this );
 		final Object[] state = persister.getValues( entity );
+		TenantIdHelper.initializeTenantId( entity, state, persister, this );
+		if ( persister.hasMultipleTables() || persister.hasOwnedCollections() ) {
+			TenantIdHelper.checkStoredTenantOwnership( id, persister, this, ALLOW );
+		}
 		if ( !firePreUpsert(entity, id, state, persister) ) {
 			runInterceptorCallback(
 					() -> getInterceptor().onUpsert( entity, id, state, persister.getPropertyNames(), persister.getPropertyTypes() ) );
@@ -1288,7 +1368,7 @@ public class StatelessSessionImpl
 
 	private void doRefresh(String entityName, Object entity, LockMode lockMode) {
 		if ( getSessionFactoryOptions().isJpaBootstrap()
-				&& getNullSafeLockMode( lockMode ) != LockMode.NONE ) {
+				&& lockMode != null && lockMode != LockMode.NONE ) {
 			checkTransactionNeededForUpdateOperation( "No active transaction" );
 		}
 		final var persister = getEntityPersister( entityName, entity );
@@ -1810,10 +1890,11 @@ public class StatelessSessionImpl
 	}
 
 	private LockMode getNullSafeLockMode(LockMode lockMode) {
-		return lockMode == null ? LockMode.NONE : StatelessLocking.getEffectiveLockMode( lockMode );
+		return lockMode == null ? LockMode.NONE : StatelessLocking.getEffectiveLockMode( lockMode, this );
 	}
 
 	protected Object lockCacheItem(Object id, Object previousVersion, EntityPersister persister) {
+		RootTenantCache.invalidateEntity( id, persister, this );
 		return writingToCache( persister, cache -> {
 			final Object cacheKey = cache.generateCacheKey(
 					id,
@@ -1833,6 +1914,7 @@ public class StatelessSessionImpl
 	}
 
 	protected Object lockCacheItem(Object key, CollectionPersister persister) {
+		RootTenantCache.invalidateCollection( key, persister, this );
 		return usingCache( persister, cache -> {
 			final Object cacheKey = cache.generateCacheKey(
 					key,

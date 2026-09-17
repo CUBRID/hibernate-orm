@@ -73,6 +73,8 @@ import org.hibernate.generator.values.GeneratedValuesMutationDelegate;
 import org.hibernate.id.BulkInsertionCapableIdentifierGenerator;
 import org.hibernate.id.CompositeNestedGeneratedValueGenerator;
 import org.hibernate.id.OptimizableGenerator;
+import org.hibernate.id.insert.InsertReturningDelegate;
+import org.hibernate.id.insert.UpdateVersionSelectDelegate;
 import org.hibernate.internal.util.ImmutableBitSet;
 import org.hibernate.spi.IndexedConsumer;
 import org.hibernate.internal.util.collections.LockModeEnumMap;
@@ -118,6 +120,9 @@ import org.hibernate.metamodel.mapping.EntityIdentifierMapping;
 import org.hibernate.metamodel.mapping.EntityMappingType;
 import org.hibernate.metamodel.mapping.EntityRowIdMapping;
 import org.hibernate.metamodel.mapping.EntityVersionMapping;
+import org.hibernate.metamodel.mapping.TenantIdMapping;
+import org.hibernate.loader.ast.internal.TenantIdLoader;
+import org.hibernate.metamodel.mapping.internal.TenantIdMappingImpl;
 import org.hibernate.metamodel.mapping.ForeignKeyDescriptor;
 import org.hibernate.metamodel.mapping.JdbcMapping;
 import org.hibernate.metamodel.mapping.LegacyAuxiliaryMutationSupport;
@@ -266,6 +271,7 @@ import static org.hibernate.engine.internal.ManagedTypeHelper.isPersistentAttrib
 import static org.hibernate.engine.internal.ManagedTypeHelper.processIfPersistentAttributeInterceptable;
 import static org.hibernate.event.jpa.internal.EntityCallbacksFactory.buildCallbacks;
 import static org.hibernate.generator.EventType.FORCE_INCREMENT;
+import static org.hibernate.dialect.generated.spi.GeneratedValuesSupport.Capability.UPDATE_RETURNING;
 import static org.hibernate.generator.EventType.INSERT;
 import static org.hibernate.generator.EventType.UPDATE;
 import static org.hibernate.generator.values.internal.GeneratedValuesHelper.getGeneratedValuesDelegate;
@@ -443,6 +449,8 @@ public abstract class AbstractEntityPersister
 	private EntityIdentifierMapping identifierMapping;
 	private NaturalIdMapping naturalIdMapping;
 	private EntityVersionMapping versionMapping;
+	private TenantIdMapping tenantIdMapping;
+	private TenantIdLoader tenantIdLoader;
 	private EntityRowIdMapping rowIdMapping;
 	private EntityDiscriminatorMapping discriminatorMapping;
 	private AuxiliaryMapping auxiliaryMapping;
@@ -2232,7 +2240,7 @@ public abstract class AbstractEntityPersister
 	 * and see the current version.
 	 *
 	 * @see SimpleSelect#setCurrentRead(boolean)
-	 * @see org.hibernate.dialect.lock.spi.LockingSupport.Metadata#readsWaitForUncommittedWrites()
+	 * @see org.hibernate.dialect.lock.spi.ReadGuarantees#isCurrentRead()
 	 */
 	public String generateSelectVersionString() {
 		final var select = new SimpleSelect( getFactory() ).setTableName( getVersionedTableName() );
@@ -3516,6 +3524,8 @@ public abstract class AbstractEntityPersister
 
 	@Override
 	public void prepareLoaders() {
+		tenantIdLoader = tenantIdMapping == null || tenantIdMapping.getAttributeMapping() == null
+				? null : new TenantIdLoader( this );
 		// Hibernate Reactive needs to override the loaders
 		singleIdLoader = buildSingleIdEntityLoader();
 		multiIdLoader = buildMultiIdLoader();
@@ -3564,6 +3574,7 @@ public abstract class AbstractEntityPersister
 	public final void postInstantiate(PersistentClass bootEntityDescriptor) throws MappingException {
 
 		tableMappings = buildTableMappings( bootEntityDescriptor );
+		tenantIdMapping = TenantIdMappingImpl.create( this );
 
 		final List<AttributeMapping> insertGeneratedAttributes =
 				hasInsertGeneratedProperties()
@@ -3614,12 +3625,90 @@ public abstract class AbstractEntityPersister
 	}
 
 	protected GeneratedValuesMutationDelegate createUpdateDelegate() {
-		return getGeneratedValuesDelegate( this, UPDATE );
+		if ( supportsDatabaseDirtinessCheck() ) {
+			final List<ModelPart> generatedProperties = new ArrayList<>( getUpdateGeneratedProperties() );
+			generatedProperties.add( getVersionMapping() );
+			return getDialect().getGeneratedValuesSupport().supports( UPDATE_RETURNING )
+					? new InsertReturningDelegate( this, UPDATE, generatedProperties )
+					: new UpdateVersionSelectDelegate( this, generatedProperties );
+		}
+		else {
+			return getGeneratedValuesDelegate( this, UPDATE );
+		}
+	}
+
+	private boolean supportsDatabaseDirtinessCheck() {
+		if ( !isVersioned()
+				|| isVersionPropertyGenerated()
+				|| hasPartitionedSelectionMapping() && !getDialect().getGeneratedValuesSupport().supports( UPDATE_RETURNING )
+				|| getIdentifierTableMapping().getUpdateDetails().getCustomSql() != null ) {
+			return false;
+		}
+
+		boolean hasExcludedProperty = false;
+		final boolean[] propertyUpdateability = getPropertyUpdateability();
+		final boolean[] propertyVersionability = getPropertyVersionability();
+		final var generators = getGenerators();
+		for ( int i = 0; i < propertyUpdateability.length; i++ ) {
+			final var attribute = getAttributeMapping( i );
+			final var generator = generators[i];
+			if ( generator != null && generator.generatedOnExecution() && generator.generatesOnUpdate() ) {
+				// A value generated by the update cannot be compared with its previous value.
+				if ( propertyVersionability[i] ) {
+					return false;
+				}
+				hasExcludedProperty = true;
+			}
+			else if ( propertyVersionability[i] && attribute.isPluralAttributeMapping() ) {
+				return false;
+			}
+			else if ( propertyUpdateability[i] && isVersion( attribute ) ) {
+				if ( !propertyVersionability[i] ) {
+					hasExcludedProperty = true;
+				}
+				else if ( supportsDatabaseDirtinessCheck( attribute ) ) {
+					return false;
+				}
+			}
+		}
+		return hasExcludedProperty;
+	}
+
+	private boolean isVersion(AttributeMapping attribute) {
+		return attribute != getVersionMapping().getVersionAttribute();
+	}
+
+	private boolean supportsDatabaseDirtinessCheck(AttributeMapping attribute) {
+		if ( attribute instanceof SingularAttributeMapping singularAttribute ) {
+			for ( int j = 0; j < singularAttribute.getJdbcTypeCount(); j++ ) {
+				final var selectable = singularAttribute.getSelectable( j );
+				if ( !selectable.isFormula() && selectable.isUpdateable() ) {
+					if ( !isIdentifierTableSelectable( selectable )
+						|| !selectable.getJdbcMapping().getJdbcType().isComparable()
+						|| !"?".equals( selectable.getWriteExpression() ) ) {
+						return true;
+					}
+				}
+			}
+			return false;
+		}
+		else {
+			return true;
+		}
+	}
+
+	private boolean isIdentifierTableSelectable(SelectableMapping selectable) {
+		final String tableName = physicalTableNameForMutation( selectable );
+		for ( var tableMapping : getTableMappings() ) {
+			if ( tableName.equals( tableMapping.getTableName() ) ) {
+				return tableMapping.isIdentifierTable();
+			}
+		}
+		return false;
 	}
 
 	protected EntityTableDescriptor[] buildTableDescriptors() {
-
-		var tableBuilderMap = new LinkedHashMap<String, TableDescriptorBuilder>();
+		final var tableBuilderMap = new LinkedHashMap<String, TableDescriptorBuilder>();
 		visitMutabilityOrderedTables( (name, relativePosition, tableKeyColumnVisitationSupplier) -> {
 			final var tableMappingBuilder = getTableDescriptorBuilder(
 					name,
@@ -3638,7 +3727,7 @@ public abstract class AbstractEntityPersister
 		final boolean entityHasSelfReferentialTable = tableBuilderMap.values().stream()
 				.anyMatch( builder -> builder.isSelfReferential );
 
-		final EntityTableDescriptor[] tableDescriptors = new EntityTableDescriptor[tableBuilderMap.size()];
+		final var tableDescriptors = new EntityTableDescriptor[tableBuilderMap.size()];
 		int i = 0;
 		for ( var entry : tableBuilderMap.entrySet() ) {
 			tableDescriptors[i++] = entry.getValue().build( entityHasSelfReferentialTable );
@@ -3652,20 +3741,7 @@ public abstract class AbstractEntityPersister
 	}
 
 	protected void applyAttribute(LinkedHashMap<String, TableDescriptorBuilder> tableBuilderMap, AttributeMapping attribute) {
-		if ( !attribute.isPluralAttributeMapping() ) {
-			// Skip identifier attributes - they're already represented in keyDescriptor
-			// For composite identifiers (@IdClass), the individual attributes (e.g., productId, operator)
-			// should not be duplicated in the attributes list
-			if ( isIdentifierAttribute( attribute ) ) {
-				return;
-			}
-
-			// Skip read-only attributes (insertable=false, updatable=false)
-			// TableDescriptor targets mutation operations, so read-only attributes are not applicable
-			if ( isReadOnlyAttribute( attribute ) ) {
-				return;
-			}
-
+		if ( applyAttribute( attribute ) ) {
 			final var tableName = attribute.getContainingTableExpression();
 			final var builder = tableBuilderMap.get( tableName );
 			if ( builder != null && !builder.isInverse ) {
@@ -3676,14 +3752,25 @@ public abstract class AbstractEntityPersister
 		}
 	}
 
+	private boolean applyAttribute(AttributeMapping attribute) {
+		return !attribute.isPluralAttributeMapping()
+			// - Skip identifier attributes - they're already represented in keyDescriptor
+			//	For composite identifiers (@IdClass), the individual attributes (e.g., productId, operator)
+			//	should not be duplicated in the attributes list
+			&& !isIdentifierAttribute( attribute )
+			// - Skip read-only attributes (insertable=false, updatable=false)
+			//	TableDescriptor targets mutation operations, so read-only attributes are not applicable
+			&& !isReadOnlyAttribute( attribute );
+	}
+
 	protected boolean isIdentifierAttribute(AttributeMapping attribute) {
 		return attribute.isEntityIdentifierMapping() // @Id or @EmbeddedId
-				|| IDENTIFIER_MAPPER_PROPERTY.equals( attribute.getAttributeName() ); // @IdClass
+			|| IDENTIFIER_MAPPER_PROPERTY.equals( attribute.getAttributeName() ); // @IdClass
 	}
 
 	protected boolean isReadOnlyAttribute(AttributeMapping attribute) {
 		for ( int i = 0; i < attribute.getJdbcTypeCount(); i++ ) {
-			var selectable = attribute.getSelectable( i );
+			final var selectable = attribute.getSelectable( i );
 			if ( selectable.isInsertable() || selectable.isUpdateable() ) {
 				return false;
 			}
@@ -6393,6 +6480,16 @@ public abstract class AbstractEntityPersister
 	@Override
 	public EntityVersionMapping getVersionMapping() {
 		return versionMapping;
+	}
+
+	@Override
+	public TenantIdMapping getTenantIdMapping() {
+		return tenantIdMapping;
+	}
+
+	@Override
+	public TenantIdLoader getTenantIdLoader() {
+		return tenantIdLoader;
 	}
 
 	@Override

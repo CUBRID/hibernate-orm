@@ -16,6 +16,7 @@ import jakarta.persistence.Version;
 import org.hibernate.annotations.Cache;
 import org.hibernate.annotations.CacheConcurrencyStrategy;
 import org.hibernate.cfg.AvailableSettings;
+import org.hibernate.testing.orm.TransactionConcurrencyChecks;
 import org.hibernate.testing.orm.junit.EntityManagerFactoryScope;
 import org.hibernate.testing.orm.junit.Jpa;
 import org.hibernate.testing.orm.junit.Setting;
@@ -159,6 +160,17 @@ class StatelessLockingTest {
 				final var query = agent.createQuery( QUERY, Lockable.class ).setLockMode( mode );
 				final var inspector = scope.getCollectingStatementInspector();
 				inspector.clear();
+				final var concurrency = scope.getEntityManagerFactory()
+						.unwrap( org.hibernate.engine.spi.SessionFactoryImplementor.class )
+						.getJdbcServices().getJdbcEnvironment().getTransactionConcurrency();
+				final boolean supported = TransactionConcurrencyChecks
+						.supportsStatelessOptimisticLocking( concurrency );
+				if ( !supported ) {
+					org.junit.jupiter.api.Assertions.assertThrows( org.hibernate.HibernateException.class, query::getResultList );
+					assertEquals( List.of(), inspector.getSqlQueries() );
+					transaction.rollback();
+					return;
+				}
 				query.getResultList();
 				optimisticSql = List.copyOf( inspector.getSqlQueries() );
 				assertEquals( OPTIMISTIC, query.getLockMode() );
