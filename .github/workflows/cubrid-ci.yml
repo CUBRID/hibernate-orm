@@ -41,7 +41,7 @@ jobs:
           - { cubrid-version: "11.4", image: "docker.io/cubrid/cubrid:11.4" }
           # The development build, tested with the driver shipped inside it rather than
           # the released one, so an engine or driver regression surfaces before release.
-          - { cubrid-version: "nightly", image: "ghcr.io/srltas/cubrid-nightly:latest", bundled-driver: true }
+          - { cubrid-version: "Nightly", image: "ghcr.io/srltas/cubrid-nightly:latest", bundled-driver: true }
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
