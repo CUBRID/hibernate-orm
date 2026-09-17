@@ -76,15 +76,24 @@ jobs:
         run: |
           set -euo pipefail
           roots="hibernate-core/src/test hibernate-envers/src/test"
-          before=$(grep -rn --include='*.java' '@SkipForDialect(dialectClass = CUBRIDDialect.class' $roots | wc -l)
+          # grep reports "no match" as a non-zero exit, which is exactly what the count
+          # after a successful strip looks like, so neither count may be left to fail the step.
+          occurrences() {
+            { grep -rn --include='*.java' -F "$1" $roots || true; } | wc -l
+          }
+          pattern='@SkipForDialect(dialectClass = CUBRIDDialect.class'
+          before=$(occurrences "$pattern")
           if [ "$before" -eq 0 ]; then
             echo "::error::found no CUBRID skips to strip, the annotation format must have changed"
             exit 1
           fi
-          grep -rl --include='*.java' '@SkipForDialect(dialectClass = CUBRIDDialect.class' $roots \
-            | xargs sed -i '/@SkipForDialect(dialectClass = CUBRIDDialect.class/d'
-          after=$(grep -rn --include='*.java' '@SkipForDialect(dialectClass = CUBRIDDialect.class' $roots | wc -l)
+          grep -rl --include='*.java' -F "$pattern" $roots | xargs sed -i "\\|$pattern|d"
+          after=$(occurrences "$pattern")
           echo "stripped $before CUBRID skips, $after left"
+          if [ "$after" -ne 0 ]; then
+            echo "::error::$after CUBRID skips survived the strip, the measurement would be wrong"
+            exit 1
+          fi
       - name: Set up Java 25
         uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
         with:
