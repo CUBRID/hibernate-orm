@@ -1,0 +1,118 @@
+name: CUBRID skip recovery
+
+# Answers one question the daily CI cannot: of the tests CUBRID currently cannot run,
+# how many would pass now?
+#
+# Those tests carry @SkipForDialect, so a normal run reports them as skipped and says
+# nothing about whether the underlying defect is still there. This runs the suite twice
+# against the same development build, once as-is and once with every CUBRID skip stripped
+# out, and reports the difference. The number is the progress metric for the CUBRID engine
+# and JDBC driver work.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch to test'
+        required: false
+        default: 'cubrid-daily'
+      image:
+        description: 'CUBRID image to measure against'
+        required: false
+        default: 'ghcr.io/srltas/cubrid-nightly:latest'
+  schedule:
+    # Weekly. The skip set only moves when the engine or the driver does.
+    - cron: '0 20 * * 0'
+
+permissions: {}
+
+jobs:
+  measure:
+    name: ${{ matrix.mode }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    # The stripped run is expected to fail: every skip that is still justified fails there.
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { mode: "baseline", strip: false }
+          - { mode: "stripped", strip: true }
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.ref || 'cubrid-daily' }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Merge main
+        run: |
+          git fetch --no-tags origin main
+          git -c user.name=github-actions[bot] \
+              -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
+              merge --no-edit FETCH_HEAD
+      - name: Reclaim disk space
+        run: .github/ci-prerequisites.sh
+      - name: Start CUBRID
+        run: CUBRID_IMAGE=${{ inputs.image || 'ghcr.io/srltas/cubrid-nightly:latest' }} ./db.sh cubrid
+      - name: Take the JDBC driver from the image
+        run: |
+          set -euo pipefail
+          jar=$(docker exec cubrid sh -lc 'readlink -f "$CUBRID"/jdbc/cubrid_jdbc.jar')
+          version=${jar##*/cubrid-jdbc-}
+          version=${version%.jar}
+          mkdir -p "$RUNNER_TEMP/cubrid-jdbc"
+          docker cp "cubrid:$jar" "$RUNNER_TEMP/cubrid-jdbc/cubrid-jdbc-$version.jar"
+          sed -i "s/^cubrid = .*/cubrid = \"$version\"/" gradle/libs.versions.toml
+          echo "ADDITIONAL_REPO=$RUNNER_TEMP/cubrid-jdbc" >> "$GITHUB_ENV"
+          echo "driver $version"
+      - name: Remove every CUBRID skip
+        if: matrix.strip
+        # Each annotation is a single line, so deleting the line is enough. Leaving the
+        # now-unused CUBRIDDialect import behind is fine: javac only warns. The count is
+        # asserted so a change in annotation formatting fails here instead of silently
+        # measuring nothing.
+        run: |
+          set -euo pipefail
+          roots="hibernate-core/src/test hibernate-envers/src/test"
+          before=$(grep -rn --include='*.java' '@SkipForDialect(dialectClass = CUBRIDDialect.class' $roots | wc -l)
+          if [ "$before" -eq 0 ]; then
+            echo "::error::found no CUBRID skips to strip, the annotation format must have changed"
+            exit 1
+          fi
+          grep -rl --include='*.java' '@SkipForDialect(dialectClass = CUBRIDDialect.class' $roots \
+            | xargs sed -i '/@SkipForDialect(dialectClass = CUBRIDDialect.class/d'
+          after=$(grep -rn --include='*.java' '@SkipForDialect(dialectClass = CUBRIDDialect.class' $roots | wc -l)
+          echo "stripped $before CUBRID skips, $after left"
+      - name: Set up Java 25
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: 'temurin'
+          java-version: '25'
+      - name: Run tests
+        # `test`, not `ciCheck`: the stripped tree trips the format checks, and they have
+        # nothing to say about this measurement.
+        run: ./gradlew :hibernate-core:test :hibernate-envers:test -Pdb=cubrid --continue --stacktrace
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: skip-recovery-${{ matrix.mode }}
+          path: '**/target/test-results/**/*.xml'
+          if-no-files-found: error
+
+  report:
+    name: report
+    needs: measure
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.ref || 'cubrid-daily' }}
+          persist-credentials: false
+      - uses: actions/download-artifact@abefc31eb1234c1a4f8a0f1a24c6ee0f86d09427 # v6.0.0
+        with:
+          path: results
+      - name: Compare
+        run: python3 .github/skip-recovery-report.py results >> "$GITHUB_STEP_SUMMARY"
