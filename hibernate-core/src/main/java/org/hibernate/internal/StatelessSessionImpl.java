@@ -92,7 +92,6 @@ import org.hibernate.persister.entity.EntityPersister;
 import org.hibernate.query.spi.QueryParameterBindings;
 import org.hibernate.stat.spi.StatisticsImplementor;
 import org.hibernate.type.TypeHelper;
-import org.jetbrains.annotations.NotNull;
 
 import java.util.HashMap;
 import java.util.List;
@@ -275,7 +274,7 @@ public class StatelessSessionImpl
 	protected void interpretProperty(
 			@Nonnull String propertyName,
 			@Nullable Object value,
-			@NotNull Map<String, Object> properties) {
+			@Nonnull Map<String, Object> properties) {
 		switch ( propertyName ) {
 			case JPA_SHARED_CACHE_RETRIEVE_MODE:
 			case JAKARTA_SHARED_CACHE_RETRIEVE_MODE:
@@ -1160,7 +1159,7 @@ public class StatelessSessionImpl
 				final var descriptor = attribute.asPluralAttributeMapping().getCollectionDescriptor();
 				final Object cacheKey = lockCacheItem( key, descriptor );
 				if ( !descriptor.isInverse() ) {
-					final Object value = attribute.getPropertyAccess().getGetter().get(entity);
+					final Object value = attribute.getPropertyAccess().getPropertyValueAccessor().get(entity);
 					final PersistentCollection<?> collection;
 					if ( value instanceof PersistentCollection<?> persistentCollection ) {
 						if ( !persistentCollection.wasInitialized() ) {

@@ -73,7 +73,6 @@ import org.hibernate.resource.transaction.spi.TransactionStatus;
 import org.hibernate.stat.SessionStatistics;
 import org.hibernate.stat.internal.SessionStatisticsImpl;
 import org.hibernate.type.descriptor.WrapperOptions;
-import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
 import java.io.ObjectInputStream;
@@ -2051,6 +2050,10 @@ public class SessionImpl
 			internalClear();
 		}
 
+		if ( !successful ) {
+			actionQueue.getTransactionCompletionCallbacks().clearBeforeTransactionCallbacks();
+		}
+
 		persistenceContext.afterTransactionCompletion();
 		actionQueue.afterTransactionCompletion( successful );
 
@@ -2638,7 +2641,7 @@ public class SessionImpl
 	protected void interpretProperty(
 			@Nonnull String propertyName,
 			@Nullable Object value,
-			@NotNull Map<String, Object> properties) {
+			@Nonnull Map<String, Object> properties) {
 		switch ( propertyName ) {
 			case HINT_FLUSH_MODE:
 				setHibernateFlushMode( ConfigurationHelper.getFlushMode( value, FlushMode.AUTO ) );
