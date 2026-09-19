@@ -4,6 +4,8 @@
  */
 package org.hibernate.query.hql.internal;
 
+import jakarta.annotation.Nullable;
+
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.Date;
@@ -234,8 +236,6 @@ import org.hibernate.type.descriptor.java.spi.UnknownBasicJavaType;
 import org.hibernate.type.descriptor.jdbc.ObjectJdbcType;
 import org.hibernate.type.internal.BasicTypeImpl;
 
-import org.jboss.logging.Logger;
-
 import jakarta.persistence.criteria.Expression;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.metamodel.Bindable;
@@ -261,6 +261,7 @@ import static org.hibernate.grammars.hql.HqlParser.VALUES;
 import static org.hibernate.internal.util.QuotingHelper.unquoteIdentifier;
 import static org.hibernate.internal.util.QuotingHelper.unquoteJavaStringLiteral;
 import static org.hibernate.internal.util.QuotingHelper.unquoteStringLiteral;
+import static org.hibernate.query.hql.internal.HqlLogging.QUERY_LOGGER;
 import static org.hibernate.query.hql.internal.SqmTreeCreationHelper.extractJpaCompliantAlias;
 import static org.hibernate.query.common.TemporalUnit.DATE;
 import static org.hibernate.query.common.TemporalUnit.DAY_OF_MONTH;
@@ -290,7 +291,6 @@ import static org.hibernate.type.spi.TypeConfiguration.isJdbcTemporalType;
  */
 public class SemanticQueryBuilder<R> extends HqlParserBaseVisitor<Object> implements SqmCreationState {
 
-	private static final Logger LOG = Logger.getLogger( SemanticQueryBuilder.class );
 	private static final Set<String> JPA_STANDARD_FUNCTIONS = Set.of(
 			"avg",
 			"max",
@@ -1435,12 +1435,7 @@ public class SemanticQueryBuilder<R> extends HqlParserBaseVisitor<Object> implem
 		if ( selectableNode instanceof SqmPluralValuedSimplePath<?> pluralPath ) {
 			// Raw plural-attribute selections are not strictly JPA compliant.
 			if ( creationOptions.useStrictJpaCompliance() ) {
-				HqlLogging.QUERY_LOGGER.debugf(
-						"Raw selection of plural attribute not supported by JPA."
-							+ " Use 'value(%s)' or 'key(%s)' to indicate what part of the collection to select",
-						pluralPath.getAlias(),
-						pluralPath.getAlias()
-				);
+				QUERY_LOGGER.rawPluralAttributeSelection( pluralPath.getAlias() );
 			}
 			return new SqmPluralPartSelectionPath<>( pluralPath, null );
 		}
@@ -1451,12 +1446,7 @@ public class SemanticQueryBuilder<R> extends HqlParserBaseVisitor<Object> implem
 			// for plural-join selections, use the element path as the selection
 			//		- this is not strictly JPA compliant
 			if ( creationOptions.useStrictJpaCompliance() ) {
-				HqlLogging.QUERY_LOGGER.debugf(
-						"Raw selection of plural attribute not supported by JPA."
-							+ " Use 'value(%s)' or 'key(%s)' to indicate what part of the collection to select",
-						sqmPath.getAlias(),
-						sqmPath.getAlias()
-				);
+				QUERY_LOGGER.rawPluralAttributeSelection( sqmPath.getAlias() );
 			}
 			final var elementPath =
 					sqmPath.resolvePathPart( CollectionPart.Nature.ELEMENT.getName(), true, this );
@@ -1799,7 +1789,7 @@ public class SemanticQueryBuilder<R> extends HqlParserBaseVisitor<Object> implem
 					query );
 		}
 		if ( sortExpression instanceof SqmLiteral || sortExpression instanceof SqmParameter ) {
-			HqlLogging.QUERY_LOGGER.debugf( "Questionable sorting by constant value: %s", sortExpression );
+			QUERY_LOGGER.sortingByConstant( sortExpression );
 		}
 		return new SqmSortSpecification( sortExpression, sortOrder( ctx ), nullPrecedence( ctx ) );
 	}
@@ -2703,7 +2693,7 @@ public class SemanticQueryBuilder<R> extends HqlParserBaseVisitor<Object> implem
 
 	private SqmExpression<?> resolveEnumShorthandLiteral(
 			HqlParser.ExpressionContext expressionContext,
-			String enumValue, String enumType, Set<String> enumTypes) {
+			String enumValue, @Nullable String enumType, Set<String> enumTypes) {
 		if ( enumValue != null && enumType != null && enumTypes.contains(enumType) ) {
 			final var dotIdentifierConsumer = dotIdentifierConsumerStack.getCurrent();
 			dotIdentifierConsumer.consumeIdentifier( enumType, true, false );
@@ -5597,7 +5587,7 @@ public class SemanticQueryBuilder<R> extends HqlParserBaseVisitor<Object> implem
 		// Note: this is a total misuse of the elements() and indices() functions,
 		//       which are supposed to be a shortcut way to write a subquery!
 		//       used this way, they're just a worse way to write value()/index()
-		LOG.warn("Misuse of HQL elements() or indices() function, use element() or index() instead");
+		QUERY_LOGGER.misuseOfElementsOrIndices();
 
 		if ( getCreationOptions().useStrictJpaCompliance() ) {
 			throw new StrictJpaComplianceViolation( StrictJpaComplianceViolation.Type.HQL_COLLECTION_FUNCTION );
