@@ -6,7 +6,6 @@ package org.hibernate.orm.test.boot.models.xml.dynamic;
 
 import org.hibernate.boot.spi.MetadataImplementor;
 import org.hibernate.cfg.MappingSettings;
-import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.mapping.Collection;
 import org.hibernate.mapping.Property;
 import org.hibernate.mapping.RootClass;
@@ -14,7 +13,6 @@ import org.hibernate.testing.orm.junit.DomainModel;
 import org.hibernate.testing.orm.junit.DomainModelScope;
 import org.hibernate.testing.orm.junit.ServiceRegistry;
 import org.hibernate.testing.orm.junit.Setting;
-import org.hibernate.testing.orm.junit.SkipForDialect;
 import org.hibernate.type.BasicType;
 import org.hibernate.type.SqlTypes;
 import org.hibernate.type.descriptor.java.BasicJavaType;
@@ -44,7 +42,6 @@ public class DynamicTypingTests {
 	} )
 	@DomainModel(xmlMappings = "mappings/models/dynamic/dynamic-typing.xml")
 	@Test
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID has no native boolean type; boolean resolves to SMALLINT")
 	void testDynamicModelBasicTyping(DomainModelScope modelScope) {
 		final MetadataImplementor domainModel = modelScope.getDomainModel();
 		final JdbcType uuidJdbcType = domainModel
