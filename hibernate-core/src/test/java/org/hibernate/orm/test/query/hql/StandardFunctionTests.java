@@ -13,7 +13,6 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 
-import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.community.dialect.InformixDialect;
 import org.hibernate.dialect.CockroachDialect;
 import org.hibernate.dialect.SpannerDialect;
@@ -932,7 +931,6 @@ public class StandardFunctionTests {
 
 	@Test
 	@RequiresDialectFeature(feature = DialectFeatureChecks.SupportsFormat.class)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID to_char pads name tokens and has no fill-mode (FM) to suppress padding")
 	public void testFormat(SessionFactoryScope scope) {
 		scope.inTransaction(
 				session -> {

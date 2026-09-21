@@ -32,8 +32,6 @@ import org.junit.jupiter.api.TestMethodOrder;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import org.hibernate.testing.orm.junit.SkipForDialect;
-import org.hibernate.community.dialect.CUBRIDDialect;
 
 /**
  * Tests @Audited with @ManyToOne and @OneToOne associations.
@@ -182,7 +180,6 @@ class AuditToOneAssociationTest {
 
 	@Test
 	@Order(2)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support the subquery-in-join SQL emitted for audit queries")
 	void testPointInTimeRead(SessionFactoryScope scope) {
 		final var sf = scope.getSessionFactory();
 
@@ -217,7 +214,6 @@ class AuditToOneAssociationTest {
 
 	@Test
 	@Order(3)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support the subquery-in-join SQL emitted for audit queries")
 	void testLazyPointInTimeRead(SessionFactoryScope scope) {
 		final var sf = scope.getSessionFactory();
 
@@ -238,7 +234,6 @@ class AuditToOneAssociationTest {
 
 	@Test
 	@Order(4)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support the subquery-in-join SQL emitted for audit queries")
 	void testGetHistory(SessionFactoryScope scope) {
 		try (var auditLog = AuditLogFactory.create( scope.getSessionFactory() )) {
 			var history = auditLog.getHistory( Book.class, 1L );
@@ -269,7 +264,6 @@ class AuditToOneAssociationTest {
 
 	@Test
 	@Order(5)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support the subquery-in-join SQL emitted for audit queries")
 	void testJoinFetchAllRevisions(SessionFactoryScope scope) {
 		try (var session = scope.getSessionFactory().withOptions()
 				.atChangeset( AuditLog.ALL_CHANGESETS ).openSession()) {
@@ -306,7 +300,6 @@ class AuditToOneAssociationTest {
 
 	@Test
 	@Order(6)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support the subquery-in-join SQL emitted for audit queries")
 	void testJoinFetchPointInTime(SessionFactoryScope scope) {
 		final var sf = scope.getSessionFactory();
 
@@ -333,7 +326,6 @@ class AuditToOneAssociationTest {
 
 	@Test
 	@Order(7)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support the subquery-in-join SQL emitted for audit queries")
 	void testExplicitEntityJoinPointInTime(SessionFactoryScope scope) {
 		final var sf = scope.getSessionFactory();
 
@@ -367,7 +359,6 @@ class AuditToOneAssociationTest {
 
 	@Test
 	@Order(8)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support the subquery-in-join SQL emitted for audit queries")
 	void testNullAssociationPointInTimeRead(SessionFactoryScope scope) {
 		final var sf = scope.getSessionFactory();
 
@@ -386,7 +377,6 @@ class AuditToOneAssociationTest {
 
 	@Test
 	@Order(9)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support the subquery-in-join SQL emitted for audit queries")
 	void testNullAssociationGetHistory(SessionFactoryScope scope) {
 		try (var auditLog = AuditLogFactory.create( scope.getSessionFactory() )) {
 			var history = auditLog.getHistory( Book.class, 10L );
@@ -405,7 +395,6 @@ class AuditToOneAssociationTest {
 
 	@Test
 	@Order(10)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support the subquery-in-join SQL emitted for audit queries")
 	void testLeftJoinFetchNullAssociationAllRevisions(SessionFactoryScope scope) {
 		try (var session = scope.getSessionFactory().withOptions()
 				.atChangeset( AuditLog.ALL_CHANGESETS ).openSession()) {
@@ -428,7 +417,6 @@ class AuditToOneAssociationTest {
 
 	@Test
 	@Order(11)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support the subquery-in-join SQL emitted for audit queries")
 	void testOneToOnePointInTimeRead(SessionFactoryScope scope) {
 		final var sf = scope.getSessionFactory();
 

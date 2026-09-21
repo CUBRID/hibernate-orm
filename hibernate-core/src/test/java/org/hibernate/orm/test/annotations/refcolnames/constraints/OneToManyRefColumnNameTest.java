@@ -12,12 +12,10 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.RollbackException;
-import org.hibernate.community.dialect.CUBRIDDialect;
 import org.hibernate.exception.ConstraintViolationException;
 import org.hibernate.testing.orm.junit.EntityManagerFactoryScope;
 import org.hibernate.testing.orm.junit.JiraKey;
 import org.hibernate.testing.orm.junit.Jpa;
-import org.hibernate.testing.orm.junit.SkipForDialect;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashSet;
@@ -54,7 +52,6 @@ class OneToManyRefColumnNameTest {
 	}
 
 	@Test
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID requires a foreign key to reference the primary key, so an FK to a non-PK unique column is not created")
 	void testForeignKey(EntityManagerFactoryScope scope) {
 		scope.getEntityManagerFactory().getSchemaManager().truncate();
 		This thisThing = new This();
