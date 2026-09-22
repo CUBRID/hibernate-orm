@@ -53,7 +53,6 @@ import org.hibernate.community.dialect.CUBRIDDialect;
 		value = "org.hibernate.temporal.audit.inheritance.AuditTablePerClassInheritanceTest$TxIdSupplier"))
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
-@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support the subquery-in-join SQL emitted for audit queries")
 class AuditTablePerClassInheritanceTest {
 	private static int currentTxId;
 
@@ -257,6 +256,7 @@ class AuditTablePerClassInheritanceTest {
 
 	@Test
 	@Order(5)
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted")
 	void testToOneAssociation(SessionFactoryScope scope) {
 		final var sf = scope.getSessionFactory();
 

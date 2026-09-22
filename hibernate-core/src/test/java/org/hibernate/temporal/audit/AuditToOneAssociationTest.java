@@ -182,7 +182,7 @@ class AuditToOneAssociationTest {
 
 	@Test
 	@Order(2)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support the subquery-in-join SQL emitted for audit queries")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted")
 	void testPointInTimeRead(SessionFactoryScope scope) {
 		final var sf = scope.getSessionFactory();
 
@@ -217,7 +217,7 @@ class AuditToOneAssociationTest {
 
 	@Test
 	@Order(3)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support the subquery-in-join SQL emitted for audit queries")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted")
 	void testLazyPointInTimeRead(SessionFactoryScope scope) {
 		final var sf = scope.getSessionFactory();
 
@@ -238,7 +238,7 @@ class AuditToOneAssociationTest {
 
 	@Test
 	@Order(4)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support the subquery-in-join SQL emitted for audit queries")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted")
 	void testGetHistory(SessionFactoryScope scope) {
 		try (var auditLog = AuditLogFactory.create( scope.getSessionFactory() )) {
 			var history = auditLog.getHistory( Book.class, 1L );
@@ -269,7 +269,7 @@ class AuditToOneAssociationTest {
 
 	@Test
 	@Order(5)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support the subquery-in-join SQL emitted for audit queries")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted")
 	void testJoinFetchAllRevisions(SessionFactoryScope scope) {
 		try (var session = scope.getSessionFactory().withOptions()
 				.atChangeset( AuditLog.ALL_CHANGESETS ).openSession()) {
@@ -306,7 +306,7 @@ class AuditToOneAssociationTest {
 
 	@Test
 	@Order(6)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support the subquery-in-join SQL emitted for audit queries")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted")
 	void testJoinFetchPointInTime(SessionFactoryScope scope) {
 		final var sf = scope.getSessionFactory();
 
@@ -333,7 +333,7 @@ class AuditToOneAssociationTest {
 
 	@Test
 	@Order(7)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support the subquery-in-join SQL emitted for audit queries")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted")
 	void testExplicitEntityJoinPointInTime(SessionFactoryScope scope) {
 		final var sf = scope.getSessionFactory();
 
@@ -367,7 +367,7 @@ class AuditToOneAssociationTest {
 
 	@Test
 	@Order(8)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support the subquery-in-join SQL emitted for audit queries")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted")
 	void testNullAssociationPointInTimeRead(SessionFactoryScope scope) {
 		final var sf = scope.getSessionFactory();
 
@@ -386,7 +386,7 @@ class AuditToOneAssociationTest {
 
 	@Test
 	@Order(9)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support the subquery-in-join SQL emitted for audit queries")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted")
 	void testNullAssociationGetHistory(SessionFactoryScope scope) {
 		try (var auditLog = AuditLogFactory.create( scope.getSessionFactory() )) {
 			var history = auditLog.getHistory( Book.class, 10L );
@@ -405,7 +405,7 @@ class AuditToOneAssociationTest {
 
 	@Test
 	@Order(10)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support the subquery-in-join SQL emitted for audit queries")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted")
 	void testLeftJoinFetchNullAssociationAllRevisions(SessionFactoryScope scope) {
 		try (var session = scope.getSessionFactory().withOptions()
 				.atChangeset( AuditLog.ALL_CHANGESETS ).openSession()) {
@@ -428,7 +428,7 @@ class AuditToOneAssociationTest {
 
 	@Test
 	@Order(11)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support the subquery-in-join SQL emitted for audit queries")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted")
 	void testOneToOnePointInTimeRead(SessionFactoryScope scope) {
 		final var sf = scope.getSessionFactory();
 

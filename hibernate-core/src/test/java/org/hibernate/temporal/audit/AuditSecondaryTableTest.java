@@ -49,7 +49,7 @@ class AuditSecondaryTableTest {
 	}
 
 	@Test
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support the subquery-in-join SQL emitted for audit queries")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted")
 	void testWriteAndPointInTimeRead(SessionFactoryScope scope) {
 		currentTxId = 0;
 
@@ -138,7 +138,7 @@ class AuditSecondaryTableTest {
 	}
 
 	@Test
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID does not support the subquery-in-join SQL emitted for audit queries")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted")
 	void testAssociationOnSecondaryTable(SessionFactoryScope scope) {
 		currentTxId = 200;
 
