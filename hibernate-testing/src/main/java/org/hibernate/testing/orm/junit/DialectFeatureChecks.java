@@ -920,6 +920,15 @@ abstract public class DialectFeatureChecks {
 		}
 	}
 
+	public static class SupportsNestedJoinGroups implements DialectFeatureCheck {
+		public boolean apply(Dialect dialect) {
+			// CUBRID accepts a parenthesized joined table as a from item, but not as the right
+			// operand of a join, and an outer join of such a group cannot be flattened into a
+			// sequence of joins without changing which rows are null-extended
+			return !( dialect instanceof CUBRIDDialect );
+		}
+	}
+
 	public static class NoAutoQuotingEnabled implements DialectFeatureCheck {
 		public boolean apply(Dialect dialect) {
 			final var keywords = dialect.getKeywordSupport().getKeywords();
