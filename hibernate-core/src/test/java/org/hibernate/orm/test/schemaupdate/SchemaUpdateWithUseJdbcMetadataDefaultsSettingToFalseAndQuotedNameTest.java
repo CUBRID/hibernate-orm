@@ -80,7 +80,7 @@ public class SchemaUpdateWithUseJdbcMetadataDefaultsSettingToFalseAndQuotedNameT
 
 	@ParameterizedTest
 	@EnumSource(JdbcMetadataAccessStrategy.class)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "the individually strategy looks the quoted table up through DatabaseMetaData and CUBRID does not return it, so validation reports it missing; the grouped strategy passes")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID lower-cases a quoted table name, and the individually strategy compares the name DatabaseMetaData returns against the quoted mapping name case sensitively, so validation reports it missing; the grouped strategy lower-cases the mapping name first and passes")
 	public void testSchemaUpdateDoesNotTryToRecreateExistingTables(JdbcMetadataAccessStrategy strategy)
 			throws Exception {
 		setUp( strategy.toString() );

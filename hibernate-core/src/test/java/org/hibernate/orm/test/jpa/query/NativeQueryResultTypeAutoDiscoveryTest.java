@@ -146,7 +146,7 @@ public class NativeQueryResultTypeAutoDiscoveryTest {
 	@SkipForDialect(dialectClass = OracleDialect.class, reason = "No support for the bit datatype so we use number(1,0)")
 	@SkipForDialect(dialectClass = DB2Dialect.class, majorVersion = 10, reason = "No support for the bit datatype so we use smallint")
 	@SkipForDialect(dialectClass = AltibaseDialect.class, reason = "No support for the bit datatype so we use char(1)")
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID has no distinct BOOLEAN/BIT/TINYINT type; they all map to smallint")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID has no boolean type and treats tinyint as an alias for smallint, so the dialect stores all three as smallint and auto-discovery returns a Short")
 	public void booleanType(EntityManagerFactoryScope scope) {
 		doTest( scope, BooleanEntity.class, true );
 	}
@@ -156,7 +156,7 @@ public class NativeQueryResultTypeAutoDiscoveryTest {
 	@SkipForDialect(dialectClass = OracleDialect.class, reason = "No support for the bit datatype so we use number(1,0)")
 	@SkipForDialect(dialectClass = DB2Dialect.class, majorVersion = 10, reason = "No support for the bit datatype so we use smallint")
 	@SkipForDialect(dialectClass = AltibaseDialect.class, reason = "No support for the bit datatype so we use char(1)")
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID has no distinct BOOLEAN/BIT/TINYINT type; they all map to smallint")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID has no boolean type and treats tinyint as an alias for smallint, so the dialect stores all three as smallint and auto-discovery returns a Short")
 	public void bitType(EntityManagerFactoryScope scope) {
 		doTest( scope, BitEntity.class, false );
 	}
@@ -176,7 +176,7 @@ public class NativeQueryResultTypeAutoDiscoveryTest {
 	@SkipForDialect(dialectClass = GaussDBDialect.class, reason = "type:resolved.Turns tinyints into shorts in result sets and advertises the type as short in the metadata")
 	@SkipForDialect(dialectClass = SpannerPostgreSQLDialect.class, reason = "Spanner maps integer types to bigint")
 	@SkipForDialect(dialectClass = SpannerDialect.class, reason = "Spanner maps integer types to bigint")
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID has no distinct BOOLEAN/BIT/TINYINT type; they all map to smallint")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID has no boolean type and treats tinyint as an alias for smallint, so the dialect stores all three as smallint and auto-discovery returns a Short")
 	public void tinyintType(EntityManagerFactoryScope scope) {
 		doTest( scope, TinyintEntity.class, (byte)127 );
 	}

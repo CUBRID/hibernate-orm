@@ -677,7 +677,7 @@ public class LockTest extends EntityManagerFactoryBasedFunctionalTest {
 	@SkipForDialect(dialectClass = SQLServerDialect.class)
 	@SkipForDialect(dialectClass = DerbyDialect.class)
 	@SkipForDialect(dialectClass = InformixDialect.class)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID has no statement-level lock timeout/NOWAIT, so the concurrent lock check blocks and times out")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "the test bounds the lock wait with Connection.setNetworkTimeout, which the CUBRID driver rejects, so the contending query stays blocked until the test's own latch expires")
 	public void testContendedPessimisticLock() throws Exception {
 		final CountDownLatch latch = new CountDownLatch( 1 );
 		final Lock lock = new Lock();
@@ -1285,7 +1285,7 @@ public class LockTest extends EntityManagerFactoryBasedFunctionalTest {
 	@SkipForDialect(dialectClass = FirebirdDialect.class, reason = "Seems like FK constraint checks are not compatible with exclusive locks")
 	@SkipForDialect(dialectClass = AltibaseDialect.class, reason = "Seems like FK constraint checks are not compatible with exclusive locks")
 	@SkipForDialect(dialectClass = GaussDBDialect.class, reason = "The USTORE storage engine does not support For Key Share and For No Key Update")
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "the foreign-key check blocks on the exclusively locked parent row, and once the statement timeout fires the CUBRID connection can no longer commit")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "the foreign-key check waits for a shared lock on the exclusively locked parent row and nothing bounds the wait, so the broker drops the idle lock holder at its session timeout and that connection can no longer commit")
 	public void testLockInsertFkTarget() {
 		assertTimeout( Duration.ofSeconds(70), () -> {
 			Lock lock = new Lock();
@@ -1329,7 +1329,7 @@ public class LockTest extends EntityManagerFactoryBasedFunctionalTest {
 	@SkipForDialect(dialectClass = FirebirdDialect.class, reason = "Seems like FK constraint checks are not compatible with exclusive locks")
 	@SkipForDialect(dialectClass = AltibaseDialect.class, reason = "FK constraint checks are not compatible with exclusive locks")
 	@SkipForDialect(dialectClass = GaussDBDialect.class, reason = "The USTORE storage engine does not support For Key Share and For No Key Update")
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "the foreign-key check blocks on the exclusively locked parent row, and once the statement timeout fires the CUBRID connection can no longer commit")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "the foreign-key check waits for a shared lock on the exclusively locked parent row and nothing bounds the wait, so the broker drops the idle lock holder at its session timeout and that connection can no longer commit")
 	public void testLockUpdateFkTarget() {
 		assertTimeout( Duration.ofSeconds(70), () -> {
 			Lock lock1 = new Lock();

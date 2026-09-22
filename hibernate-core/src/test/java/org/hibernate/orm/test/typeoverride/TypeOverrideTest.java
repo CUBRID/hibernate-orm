@@ -44,7 +44,7 @@ public class TypeOverrideTest extends BaseSessionFactoryFunctionalTest {
 	}
 
 	@Test
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRIDDialect registers BlobJdbcType.MATERIALIZED because the driver has no stream-based LOB binding, but this test only expects an overridden BLOB descriptor for a fixed list of dialects")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRIDDialect registers BlobJdbcType.MATERIALIZED because the driver rejects the setBinaryStream overload Hibernate's stream binding calls, but this test only expects an overridden BLOB descriptor for a fixed list of dialects")
 	public void testStandardBasicSqlTypeDescriptor() {
 		final Dialect dialect = getMetadata().getDatabase().getDialect();
 		final JdbcTypeRegistry jdbcTypeRegistry = getMetadata().getTypeConfiguration()
