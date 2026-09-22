@@ -503,7 +503,6 @@ public class CteTests {
 
 	@Test
 	@RequiresDialectFeature(feature = DialectFeatureChecks.SupportsRecursiveCtes.class)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "the search clause emulation adds a 'depth' column to the CTE column list, and DEPTH is a CUBRID reserved word")
 	public void testRecursiveSearchClause(SessionFactoryScope scope) {
 		scope.inTransaction(
 				session -> {
