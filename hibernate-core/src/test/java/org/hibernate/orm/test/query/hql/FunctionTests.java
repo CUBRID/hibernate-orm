@@ -1446,7 +1446,6 @@ public class FunctionTests {
 
 	@Test
 	@SkipForDialect(dialectClass = SybaseDialect.class, matchSubTypes = true)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID has no sub-second datetime difference function and the dialect emulates timestampdiff in whole seconds, so the fraction is lost even though extract(millisecond) could supply it")
 	public void testDiffMillisecondsAndNanoseconds(SessionFactoryScope scope) {
 		scope.inTransaction(
 				session -> {
