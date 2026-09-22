@@ -932,7 +932,7 @@ public class StandardFunctionTests {
 
 	@Test
 	@RequiresDialectFeature(feature = DialectFeatureChecks.SupportsFormat.class)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID to_char pads name tokens and has no fill-mode (FM) to suppress padding")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID to_char pads a day name to nine characters, the width of 'Wednesday', and rejects the fm prefix that would suppress the padding")
 	public void testFormat(SessionFactoryScope scope) {
 		scope.inTransaction(
 				session -> {

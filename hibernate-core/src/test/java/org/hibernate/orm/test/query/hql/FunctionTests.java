@@ -2471,7 +2471,7 @@ public class FunctionTests {
 
 	@Test
 	@RequiresDialectFeature(feature = DialectFeatureChecks.SupportsFormat.class)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID to_char pads name tokens and lacks fill-mode, so the formatted output differs")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID to_char pads a day name to nine characters, the width of 'Wednesday', and rejects the fm prefix that would suppress the padding")
 	public void testFormat(SessionFactoryScope scope) {
 		scope.inTransaction(
 				session -> {
@@ -2808,7 +2808,7 @@ public class FunctionTests {
 
 	@Test
 	@SkipForDialect(dialectClass = SpannerPostgreSQLDialect.class, reason = "Spanner JDBC driver currently doesn't support reading UUID column as bytes")
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID stores UUID as varchar and cannot read the column as binary")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID has no UUID type so the dialect stores it as varchar, and reading that column as bytes fails with a type conversion error")
 	public void testUUIDColumnFunction(SessionFactoryScope scope) {
 		scope.inTransaction(s -> {
 			byte[] bytes = s.createSelectionQuery("select column(e.theuuid as binary) from EntityOfBasics e", byte[].class)
