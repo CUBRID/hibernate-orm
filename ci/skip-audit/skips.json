@@ -1,0 +1,426 @@
+[
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/orm/test/annotations/refcolnames/constraints/OneToManyRefColumnNameTest.java",
+  "line": 57,
+  "cls": "OneToManyRefColumnNameTest",
+  "method": "testForeignKey",
+  "reason": "CUBRID requires a foreign key to reference the primary key, so an FK to a non-PK unique column is not created",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/orm/test/hql/HQLTest.java",
+  "line": 1487,
+  "cls": "HQLTest",
+  "method": "test_hql_aggregate_functions_within_group_example",
+  "reason": "CUBRIDDialect does not register listagg: group_concat is the nearest equivalent and takes a single sort item, while this query orders by two",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/orm/test/hql/HQLTest.java",
+  "line": 3093,
+  "cls": "HQLTest",
+  "method": "test_hql_cte_recursive_search_example",
+  "reason": "the search clause emulation puts an unquoted 'depth' column in the CTE column list and DEPTH is a CUBRID reserved word; left skipped rather than failing because this class shares data and one failure takes the rest of it down",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/orm/test/hql/TreatKeywordTest.java",
+  "line": 40,
+  "cls": "TreatKeywordTest",
+  "method": "memberOfTreatTest",
+  "reason": "CUBRID 10.2 cannot plan the joined-inheritance outer-join tree rendered for 'member of treat(...)' (Outer join query optimization failed)",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/orm/test/interfaceproxy/InterfaceProxyTest.java",
+  "line": 42,
+  "cls": "InterfaceProxyTest",
+  "method": "testInterfaceProxies",
+  "reason": "CUBRID forbids NOT NULL on a BLOB column, so schema export cannot create the table this mapping needs",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/orm/test/jpa/lock/LockTest.java",
+  "line": 680,
+  "cls": "LockTest",
+  "method": "testContendedPessimisticLock",
+  "reason": "CUBRID has no statement-level lock timeout/NOWAIT, so the concurrent lock check blocks and times out",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/orm/test/jpa/lock/LockTest.java",
+  "line": 1288,
+  "cls": "LockTest",
+  "method": "testLockInsertFkTarget",
+  "reason": "the foreign-key check blocks on the exclusively locked parent row, and once the statement timeout fires the CUBRID connection can no longer commit",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/orm/test/jpa/lock/LockTest.java",
+  "line": 1332,
+  "cls": "LockTest",
+  "method": "testLockUpdateFkTarget",
+  "reason": "the foreign-key check blocks on the exclusively locked parent row, and once the statement timeout fires the CUBRID connection can no longer commit",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/orm/test/jpa/query/NativeQueryResultTypeAutoDiscoveryTest.java",
+  "line": 149,
+  "cls": "NativeQueryResultTypeAutoDiscoveryTest",
+  "method": "booleanType",
+  "reason": "CUBRID has no distinct BOOLEAN/BIT/TINYINT type; they all map to smallint",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/orm/test/jpa/query/NativeQueryResultTypeAutoDiscoveryTest.java",
+  "line": 159,
+  "cls": "NativeQueryResultTypeAutoDiscoveryTest",
+  "method": "bitType",
+  "reason": "CUBRID has no distinct BOOLEAN/BIT/TINYINT type; they all map to smallint",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/orm/test/jpa/query/NativeQueryResultTypeAutoDiscoveryTest.java",
+  "line": 179,
+  "cls": "NativeQueryResultTypeAutoDiscoveryTest",
+  "method": "tinyintType",
+  "reason": "CUBRID has no distinct BOOLEAN/BIT/TINYINT type; they all map to smallint",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/orm/test/jpa/query/NativeQueryResultTypeAutoDiscoveryTest.java",
+  "line": 212,
+  "cls": "NativeQueryResultTypeAutoDiscoveryTest",
+  "method": "numericType",
+  "reason": "CUBRID caps numeric precision at 38 and this mapping declares 50, so the table is never created",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/orm/test/jpa/query/NativeQueryResultTypeAutoDiscoveryTest.java",
+  "line": 227,
+  "cls": "NativeQueryResultTypeAutoDiscoveryTest",
+  "method": "decimalType",
+  "reason": "CUBRID caps decimal precision at 38 and this mapping declares 50, so the table is never created",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/orm/test/locking/options/ScopeTests.java",
+  "line": 67,
+  "cls": "ScopeTests",
+  "method": "testFind",
+  "reason": "CUBRID FOR UPDATE locks all queried tables and lacks NOWAIT/WAIT/SKIP_LOCKED lock-scope control",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/orm/test/locking/options/ScopeTests.java",
+  "line": 115,
+  "cls": "ScopeTests",
+  "method": "testLock",
+  "reason": "CUBRID FOR UPDATE locks all queried tables and lacks NOWAIT/WAIT/SKIP_LOCKED lock-scope control",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/orm/test/locking/options/ScopeTests.java",
+  "line": 144,
+  "cls": "ScopeTests",
+  "method": "testRefresh",
+  "reason": "CUBRID makes a concurrent update on the FK-child table wait on the X-locked parent row, so the lock scope this test expects does not hold",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/orm/test/mapping/generated/always/GeneratedAlwaysTest.java",
+  "line": 44,
+  "cls": "GeneratedAlwaysTest",
+  "method": "<CLASS>",
+  "reason": "CUBRID does not support generated (computed) columns",
+  "classlevel": true
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/orm/test/query/CteTests.java",
+  "line": 199,
+  "cls": "CteTests",
+  "method": "testSubquery",
+  "reason": "CUBRID cannot reference an outer query alias from inside a subquery's with clause",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/orm/test/query/criteria/CriteriaBuilderNonStandardFunctionsTest.java",
+  "line": 166,
+  "cls": "CriteriaBuilderNonStandardFunctionsTest",
+  "method": "testFormatWithJavaUtilDate",
+  "reason": "CUBRID to_char rejects a DATE value with time-format tokens",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/orm/test/query/hql/FunctionTests.java",
+  "line": 1216,
+  "cls": "FunctionTests",
+  "method": "testCastBinaryWithLength",
+  "reason": "CUBRID cannot cast character varying to bit varying, and the cast is only rejected once a row is present",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/orm/test/query/hql/FunctionTests.java",
+  "line": 1449,
+  "cls": "FunctionTests",
+  "method": "testDiffMillisecondsAndNanoseconds",
+  "reason": "CUBRID has no sub-second datetime difference function, so a sub-second timestampdiff cannot be emulated",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/orm/test/query/hql/FunctionTests.java",
+  "line": 1494,
+  "cls": "FunctionTests",
+  "method": "testDateAddDiffFunctions",
+  "reason": "CUBRID has a native datediff, so the datediff(unit,x,y) synonym is unavailable",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/orm/test/query/hql/FunctionTests.java",
+  "line": 2475,
+  "cls": "FunctionTests",
+  "method": "testFormat",
+  "reason": "CUBRID to_char pads name tokens and lacks fill-mode, so the formatted output differs",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/orm/test/query/hql/FunctionTests.java",
+  "line": 2812,
+  "cls": "FunctionTests",
+  "method": "testUUIDColumnFunction",
+  "reason": "CUBRID stores UUID as varchar and cannot read the column as binary",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/orm/test/query/hql/StandardFunctionTests.java",
+  "line": 935,
+  "cls": "StandardFunctionTests",
+  "method": "testFormat",
+  "reason": "CUBRID to_char pads name tokens and has no fill-mode (FM) to suppress padding",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/orm/test/query/sql/NativeQueryResultBuilderTests.java",
+  "line": 102,
+  "cls": "NativeQueryResultBuilderTests",
+  "method": "fullyImplicitTest2",
+  "reason": "CUBRID returns count() as an int before 11.2, so the implicit native query result type is Integer instead of Long",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/orm/test/schemaupdate/SchemaUpdateWithUseJdbcMetadataDefaultsSettingToFalseAndQuotedNameTest.java",
+  "line": 83,
+  "cls": "SchemaUpdateWithUseJdbcMetadataDefaultsSettingToFalseAndQuotedNameTest",
+  "method": "testSchemaUpdateDoesNotTryToRecreateExistingTables",
+  "reason": "the individually strategy looks the quoted table up through DatabaseMetaData and CUBRID does not return it, so validation reports it missing; the grouped strategy passes",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/orm/test/sql/TemplateTest.java",
+  "line": 28,
+  "cls": "TemplateTest",
+  "method": "templateLiterals",
+  "reason": "CUBRID reserves 'zone', so Template treats it as a keyword instead of the column reference this test expects",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/orm/test/sql/TemplateTest.java",
+  "line": 88,
+  "cls": "TemplateTest",
+  "method": "testFetchGrammarVsColumnNames",
+  "reason": "CUBRID reserves 'first' and 'next', so Template treats them as keywords instead of the column references this test expects",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/orm/test/sql/TemplateTest.java",
+  "line": 111,
+  "cls": "TemplateTest",
+  "method": "testFetchGrammarVariants",
+  "reason": "CUBRID reserves 'next', so Template treats it as a keyword instead of the column reference this test expects",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/orm/test/typeoverride/TypeOverrideTest.java",
+  "line": 47,
+  "cls": "TypeOverrideTest",
+  "method": "testStandardBasicSqlTypeDescriptor",
+  "reason": "CUBRIDDialect registers BlobJdbcType.MATERIALIZED because the driver has no stream-based LOB binding, but this test only expects an overridden BLOB descriptor for a fixed list of dialects",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/temporal/audit/AuditSecondaryTableTest.java",
+  "line": 52,
+  "cls": "AuditSecondaryTableTest",
+  "method": "testWriteAndPointInTimeRead",
+  "reason": "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/temporal/audit/AuditSecondaryTableTest.java",
+  "line": 141,
+  "cls": "AuditSecondaryTableTest",
+  "method": "testAssociationOnSecondaryTable",
+  "reason": "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/temporal/audit/AuditStatelessSessionTest.java",
+  "line": 192,
+  "cls": "AuditStatelessSessionTest",
+  "method": "testPointInTimeReads",
+  "reason": "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/temporal/audit/AuditStatelessSessionTest.java",
+  "line": 243,
+  "cls": "AuditStatelessSessionTest",
+  "method": "testUpsertAsInsert",
+  "reason": "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/temporal/audit/AuditStatelessSessionTest.java",
+  "line": 269,
+  "cls": "AuditStatelessSessionTest",
+  "method": "testAssociationNavigation",
+  "reason": "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/temporal/audit/AuditStatelessSessionTest.java",
+  "line": 290,
+  "cls": "AuditStatelessSessionTest",
+  "method": "testDeletedEntityInvisible",
+  "reason": "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/temporal/audit/AuditStatelessSessionTest.java",
+  "line": 342,
+  "cls": "AuditStatelessSessionTest",
+  "method": "testBatchOperations",
+  "reason": "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/temporal/audit/AuditStatelessSessionTest.java",
+  "line": 398,
+  "cls": "AuditStatelessSessionTest",
+  "method": "testReadOnlyStatelessDoesNotCreateChangeset",
+  "reason": "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/temporal/audit/AuditToOneAssociationTest.java",
+  "line": 185,
+  "cls": "AuditToOneAssociationTest",
+  "method": "testPointInTimeRead",
+  "reason": "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/temporal/audit/AuditToOneAssociationTest.java",
+  "line": 220,
+  "cls": "AuditToOneAssociationTest",
+  "method": "testLazyPointInTimeRead",
+  "reason": "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/temporal/audit/AuditToOneAssociationTest.java",
+  "line": 241,
+  "cls": "AuditToOneAssociationTest",
+  "method": "testGetHistory",
+  "reason": "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/temporal/audit/AuditToOneAssociationTest.java",
+  "line": 272,
+  "cls": "AuditToOneAssociationTest",
+  "method": "testJoinFetchAllRevisions",
+  "reason": "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/temporal/audit/AuditToOneAssociationTest.java",
+  "line": 309,
+  "cls": "AuditToOneAssociationTest",
+  "method": "testJoinFetchPointInTime",
+  "reason": "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/temporal/audit/AuditToOneAssociationTest.java",
+  "line": 336,
+  "cls": "AuditToOneAssociationTest",
+  "method": "testExplicitEntityJoinPointInTime",
+  "reason": "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/temporal/audit/AuditToOneAssociationTest.java",
+  "line": 370,
+  "cls": "AuditToOneAssociationTest",
+  "method": "testNullAssociationPointInTimeRead",
+  "reason": "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/temporal/audit/AuditToOneAssociationTest.java",
+  "line": 389,
+  "cls": "AuditToOneAssociationTest",
+  "method": "testNullAssociationGetHistory",
+  "reason": "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/temporal/audit/AuditToOneAssociationTest.java",
+  "line": 408,
+  "cls": "AuditToOneAssociationTest",
+  "method": "testLeftJoinFetchNullAssociationAllRevisions",
+  "reason": "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/temporal/audit/AuditToOneAssociationTest.java",
+  "line": 431,
+  "cls": "AuditToOneAssociationTest",
+  "method": "testOneToOnePointInTimeRead",
+  "reason": "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/temporal/audit/inheritance/AuditJoinedDiscriminatorInheritanceTest.java",
+  "line": 260,
+  "cls": "AuditJoinedDiscriminatorInheritanceTest",
+  "method": "testToOneAssociation",
+  "reason": "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/temporal/audit/inheritance/AuditJoinedInheritanceTest.java",
+  "line": 260,
+  "cls": "AuditJoinedInheritanceTest",
+  "method": "testToOneAssociation",
+  "reason": "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/temporal/audit/inheritance/AuditSingleTableInheritanceTest.java",
+  "line": 260,
+  "cls": "AuditSingleTableInheritanceTest",
+  "method": "testToOneAssociation",
+  "reason": "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted",
+  "classlevel": false
+ },
+ {
+  "path": "hibernate-core/src/test/java/org/hibernate/temporal/audit/inheritance/AuditTablePerClassInheritanceTest.java",
+  "line": 259,
+  "cls": "AuditTablePerClassInheritanceTest",
+  "method": "testToOneAssociation",
+  "reason": "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted",
+  "classlevel": false
+ }
+]

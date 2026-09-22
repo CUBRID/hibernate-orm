@@ -1,0 +1,78 @@
+name: CUBRID skip audit
+
+# Every @SkipForDialect for CUBRID is a claim that a test cannot pass. The claim
+# was true when it was written, but the dialect has changed since, so this
+# workflow takes the annotations off one at a time and runs the tests to find
+# out which claims still hold. ci/skip-audit/audit.py decides what each group
+# measures; it never removes two skips from the same class in one run, because a
+# single failure rebuilds the SessionFactory and takes the rest of the class
+# down with it.
+
+on:
+  push:
+    branches:
+      - '**skip-audit'
+  workflow_dispatch:
+    inputs:
+      image:
+        description: 'CUBRID image to measure against'
+        required: false
+        default: 'docker.io/cubrid/cubrid:11.4'
+
+permissions: {}
+
+jobs:
+  measure:
+    name: group ${{ matrix.group }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Reclaim disk space
+        run: .github/ci-prerequisites.sh
+      - name: Start CUBRID
+        env:
+          CUBRID_IMAGE: ${{ inputs.image || 'docker.io/cubrid/cubrid:11.4' }}
+        run: ./db.sh cubrid
+      - name: Set up Java 25
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: 'temurin'
+          java-version: '25'
+      - id: strip
+        name: Remove the skips this group measures
+        env:
+          GROUP: ${{ matrix.group }}
+        run: |
+          set -euo pipefail
+          filters=$(python3 ci/skip-audit/audit.py apply "$GROUP")
+          # An empty filter list would run the whole suite instead of the group
+          test -n "$filters"
+          echo "filters=$filters" >> "$GITHUB_OUTPUT"
+      - name: Run the tests those skips guard
+        continue-on-error: true
+        env:
+          FILTERS: ${{ steps.strip.outputs.filters }}
+          MAVEN_MIRROR: "https://maven-central.storage-download.googleapis.com/maven2/"
+        run: |
+          read -ra filters <<< "$FILTERS"
+          ./gradlew :hibernate-core:test -Pdb=cubrid --continue "${filters[@]}"
+      - name: Read the results
+        env:
+          GROUP: ${{ matrix.group }}
+        run: python3 ci/skip-audit/audit.py collect "$GROUP"
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: skip-audit-group-${{ matrix.group }}
+          path: |
+            ci/skip-audit/group*.json
+            hibernate-core/target/test-results/test/*.xml
+          if-no-files-found: error
