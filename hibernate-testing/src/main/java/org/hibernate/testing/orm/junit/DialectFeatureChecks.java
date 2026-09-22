@@ -1594,7 +1594,9 @@ abstract public class DialectFeatureChecks {
 	public static class SupportsUpsertOrMerge implements DialectFeatureCheck {
 		@Override
 		public boolean apply(Dialect dialect) {
-			return !(dialect instanceof DerbyDialect);
+			// CUBRID takes none of the proposed-row styles: values(column), an explicit row
+			// alias, and an implicit excluded pseudo-row are all syntax errors
+			return !(dialect instanceof DerbyDialect || dialect instanceof CUBRIDDialect);
 		}
 	}
 
