@@ -677,7 +677,6 @@ public class LockTest extends EntityManagerFactoryBasedFunctionalTest {
 	@SkipForDialect(dialectClass = SQLServerDialect.class)
 	@SkipForDialect(dialectClass = DerbyDialect.class)
 	@SkipForDialect(dialectClass = InformixDialect.class)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "the test bounds the lock wait with Connection.setNetworkTimeout, which the CUBRID driver rejects, so the contending query stays blocked until the test's own latch expires")
 	public void testContendedPessimisticLock() throws Exception {
 		final CountDownLatch latch = new CountDownLatch( 1 );
 		final Lock lock = new Lock();
