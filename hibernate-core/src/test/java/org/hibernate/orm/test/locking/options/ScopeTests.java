@@ -64,7 +64,7 @@ public class ScopeTests {
 	}
 
 	@Test
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID FOR UPDATE locks all queried tables and lacks NOWAIT/WAIT/SKIP_LOCKED lock-scope control")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID makes a concurrent update on the FK-child table wait on the X-locked parent row, so the lock scope this test expects does not hold")
 	void testFind(SessionFactoryScope factoryScope) {
 		factoryScope.inTransaction( (session) -> {
 			final Book theTalisman = session.find( Book.class, 3, PESSIMISTIC_WRITE );
@@ -112,7 +112,7 @@ public class ScopeTests {
 	}
 
 	@Test
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID FOR UPDATE locks all queried tables and lacks NOWAIT/WAIT/SKIP_LOCKED lock-scope control")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID makes a concurrent update on the FK-child table wait on the X-locked parent row, so the lock scope this test expects does not hold")
 	void testLock(SessionFactoryScope factoryScope) {
 		factoryScope.inTransaction( (session) -> {
 			final Book theTalisman = session.find( Book.class, 3 );
