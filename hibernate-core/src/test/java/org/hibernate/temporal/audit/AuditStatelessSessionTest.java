@@ -189,7 +189,7 @@ class AuditStatelessSessionTest {
 
 	@Test
 	@Order(2)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "the default audit strategy puts a point-in-time subquery in the join condition, which CUBRID rejects; the validity strategy passes, but a skip cannot target one strategy")
 	void testPointInTimeReads(SessionFactoryScope scope) {
 		final var sf = scope.getSessionFactory();
 
@@ -240,7 +240,7 @@ class AuditStatelessSessionTest {
 
 	@Test
 	@Order(4)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "the default audit strategy puts a point-in-time subquery in the join condition, which CUBRID rejects; the validity strategy passes, but a skip cannot target one strategy")
 	void testUpsertAsInsert(SessionFactoryScope scope) {
 		final var sf = scope.getSessionFactory();
 
@@ -266,7 +266,7 @@ class AuditStatelessSessionTest {
 
 	@Test
 	@Order(5)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "the default audit strategy puts a point-in-time subquery in the join condition, which CUBRID rejects; the validity strategy passes, but a skip cannot target one strategy")
 	void testAssociationNavigation(SessionFactoryScope scope) {
 		final var sf = scope.getSessionFactory();
 
@@ -287,7 +287,7 @@ class AuditStatelessSessionTest {
 
 	@Test
 	@Order(6)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "the default audit strategy puts a point-in-time subquery in the join condition, which CUBRID rejects; the validity strategy passes, but a skip cannot target one strategy")
 	void testDeletedEntityInvisible(SessionFactoryScope scope) {
 		final var sf = scope.getSessionFactory();
 
@@ -339,7 +339,7 @@ class AuditStatelessSessionTest {
 
 	@Test
 	@Order(9)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "the default audit strategy puts a point-in-time subquery in the join condition, which CUBRID rejects; the validity strategy passes, but a skip cannot target one strategy")
 	void testBatchOperations(SessionFactoryScope scope) {
 		final var sf = scope.getSessionFactory();
 
@@ -395,7 +395,7 @@ class AuditStatelessSessionTest {
 
 	@Test
 	@Order(10)
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "the default audit strategy puts a point-in-time subquery in the join condition, which CUBRID rejects; the validity strategy passes, but a skip cannot target one strategy")
 	void testReadOnlyStatelessDoesNotCreateChangeset(SessionFactoryScope scope) {
 		final var sf = scope.getSessionFactory();
 

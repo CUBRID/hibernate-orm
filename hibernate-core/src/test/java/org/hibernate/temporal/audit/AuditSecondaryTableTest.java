@@ -49,7 +49,7 @@ class AuditSecondaryTableTest {
 	}
 
 	@Test
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "the default audit strategy puts a point-in-time subquery in the join condition, which CUBRID rejects; the validity strategy passes, but a skip cannot target one strategy")
 	void testWriteAndPointInTimeRead(SessionFactoryScope scope) {
 		currentTxId = 0;
 
@@ -138,7 +138,7 @@ class AuditSecondaryTableTest {
 	}
 
 	@Test
-	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "CUBRID rejects a subquery inside a join condition; a derived table or a CTE in the same position is accepted")
+	@SkipForDialect(dialectClass = CUBRIDDialect.class, reason = "the default audit strategy puts a point-in-time subquery in the join condition, which CUBRID rejects; the validity strategy passes, but a skip cannot target one strategy")
 	void testAssociationOnSecondaryTable(SessionFactoryScope scope) {
 		currentTxId = 200;
 
