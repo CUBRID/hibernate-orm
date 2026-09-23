@@ -1,0 +1,61 @@
+name: CUBRID A/B
+
+# Runs hibernate-core against CUBRID twice, once as committed and once with one
+# dialect change applied inside the job, so the two result sets differ by that
+# change alone. The change under test is the CTE placement CUBRIDDialect
+# declares: with SUBQUERY Hibernate hoists a CTE written inside a subquery to the
+# top of the statement, with TOP_LEVEL it inlines the CTE as a derived table.
+
+on:
+  push:
+    branches:
+      - '**-cubrid-ab'
+
+permissions: {}
+
+jobs:
+  test:
+    name: ${{ matrix.variant }} / CUBRID ${{ matrix.cubrid-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [baseline, top_level]
+        cubrid-version: ["10.2", "11.0", "11.2", "11.3", "11.4"]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Declare TOP_LEVEL CTE placement
+        if: matrix.variant == 'top_level'
+        run: |
+          set -euo pipefail
+          file=hibernate-community-dialects/src/main/java/org/hibernate/community/dialect/CUBRIDDialect.java
+          sed -i 's/\.placement( CteSupport\.Placement\.SUBQUERY )/.placement( CteSupport.Placement.TOP_LEVEL )/' "$file"
+          # The comparison only means something if exactly this one line changed
+          test "$(git diff --numstat | awk '{s+=$1} END {print s+0}')" = "1"
+          git diff
+      - name: Reclaim disk space
+        run: .github/ci-prerequisites.sh
+      - name: Start CUBRID ${{ matrix.cubrid-version }}
+        env:
+          CUBRID_IMAGE: docker.io/cubrid/cubrid:${{ matrix.cubrid-version }}
+        run: ./db.sh cubrid
+      - name: Set up Java 25
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: 'temurin'
+          java-version: '25'
+      - name: Run hibernate-core
+        continue-on-error: true
+        env:
+          MAVEN_MIRROR: "https://maven-central.storage-download.googleapis.com/maven2/"
+        run: ./gradlew :hibernate-core:test -Pdb=cubrid --continue
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ab-${{ matrix.variant }}-${{ matrix.cubrid-version }}
+          path: hibernate-core/target/test-results/test/*.xml
+          if-no-files-found: error
