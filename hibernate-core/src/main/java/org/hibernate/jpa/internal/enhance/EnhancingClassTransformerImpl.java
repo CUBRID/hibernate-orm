@@ -10,8 +10,9 @@ import java.util.Objects;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.hibernate.bytecode.enhance.internal.bytebuddy.CorePrefixFilter;
-import org.hibernate.bytecode.enhance.spi.EnhancementContext;
-import org.hibernate.bytecode.enhance.spi.EnhancementContextWrapper;
+import org.hibernate.bytecode.enhance.spi.EnhancementEnvironment;
+import org.hibernate.bytecode.enhance.spi.EnhancementModel;
+import org.hibernate.bytecode.enhance.spi.EnhancementOptions;
 import org.hibernate.bytecode.enhance.spi.Enhancer;
 import org.hibernate.bytecode.internal.BytecodeProviderInitiator;
 import org.hibernate.bytecode.spi.BytecodeProvider;
@@ -25,16 +26,28 @@ import jakarta.persistence.spi.TransformerException;
  */
 public class EnhancingClassTransformerImpl implements ClassTransformer {
 
-	private final EnhancementContext enhancementContext;
+	private final PersistenceUnitEnhancementState sharedState;
+	private final Object transformerToken = new Object();
+	private final EnhancementModel model;
+	private final EnhancementOptions options;
 	private final BytecodeProvider bytecodeProvider;
 	private final ReentrantLock lock = new ReentrantLock();
 	private volatile WeakReference<Entry> entryReference;
 
-	public EnhancingClassTransformerImpl(EnhancementContext enhancementContext) {
-		Objects.requireNonNull( enhancementContext );
-		this.enhancementContext = enhancementContext;
-		final BytecodeProvider overriddenProvider = enhancementContext.getBytecodeProvider();
-		this.bytecodeProvider = overriddenProvider == null ? BytecodeProviderInitiator.buildDefaultBytecodeProvider() : overriddenProvider;
+	public EnhancingClassTransformerImpl(EnhancementModel model, EnhancementOptions options, BytecodeProvider provider) {
+		this.sharedState = null;
+		this.model = Objects.requireNonNull(model);
+		this.options = Objects.requireNonNull(options);
+		this.bytecodeProvider = provider == null ? BytecodeProviderInitiator.buildDefaultBytecodeProvider() : provider;
+	}
+
+	/// Creates the managed view of a paired-factory owner.
+	public EnhancingClassTransformerImpl(PersistenceUnitEnhancementState state, EnhancementOptions options,
+			BytecodeProvider provider) {
+		this.sharedState = Objects.requireNonNull(state);
+		this.model = null;
+		this.options = Objects.requireNonNull(options);
+		this.bytecodeProvider = Objects.requireNonNull(provider);
 	}
 
 	@Override
@@ -55,7 +68,9 @@ public class EnhancingClassTransformerImpl implements ClassTransformer {
 		}
 
 		try {
-			return getEnhancer( loader ).enhance( className, classfileBuffer );
+			return sharedState == null
+					? getEnhancer( loader ).enhance( className, classfileBuffer )
+					: sharedState.transform(loader, bytecodeProvider, transformerToken, options, false, className, classfileBuffer);
 		}
 		catch (final Exception e) {
 			throw new TransformerException( "Error performing enhancement of " + className, e );
@@ -64,7 +79,12 @@ public class EnhancingClassTransformerImpl implements ClassTransformer {
 
 	@Override
 	public void discoverTypes(ClassLoader loader, String className) {
-		getEnhancer( loader ).discoverTypes( className, null );
+		if ( sharedState == null ) {
+			getEnhancer( loader ).discoverTypes( className, null );
+		}
+		else {
+			sharedState.discoverType(loader, bytecodeProvider, className);
+		}
 	}
 
 	private Enhancer getEnhancer(ClassLoader loader) {
@@ -97,7 +117,7 @@ public class EnhancingClassTransformerImpl implements ClassTransformer {
 	}
 
 	private Enhancer createEnhancer(ClassLoader loader) {
-		return bytecodeProvider.getEnhancer( new EnhancementContextWrapper( enhancementContext, loader ) );
+		return bytecodeProvider.createEnhancementSession(model, EnhancementEnvironment.forClassLoader(loader)).createEnhancer(options);
 	}
 
 	private static class Entry {

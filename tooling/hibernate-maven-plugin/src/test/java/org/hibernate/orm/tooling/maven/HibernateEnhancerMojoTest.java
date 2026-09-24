@@ -30,7 +30,6 @@ import javax.tools.ToolProvider;
 import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.shared.model.fileset.FileSet;
-import org.hibernate.bytecode.enhance.internal.bytebuddy.EnhancerImpl;
 import org.hibernate.bytecode.enhance.spi.EnhancementException;
 import org.hibernate.bytecode.enhance.spi.Enhancer;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,6 +37,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import jakarta.persistence.Entity;
+import org.hibernate.bytecode.enhance.spi.EnhancementOptions;
 
 public class HibernateEnhancerMojoTest {
 
@@ -169,82 +169,51 @@ public class HibernateEnhancerMojoTest {
 	}
 
 	@Test
-	void testCreateEnhancementContext() throws Exception {
-		Method createEnhancementContextMethod = HibernateEnhancerMojo.class.getDeclaredMethod("createEnhancementContext");
-		createEnhancementContextMethod.setAccessible(true);
-		EnhancementContext enhancementContext = (EnhancementContext)createEnhancementContextMethod.invoke(enhanceMojo);
-		URLClassLoader classLoader = (URLClassLoader)enhancementContext.getLoadingClassLoader();
-		assertEquals(classesDirectory.toURI().toURL(), classLoader.getURLs()[0]);
-		assertFalse(enhancementContext.doBiDirectionalAssociationManagement(null));
-		assertFalse(enhancementContext.doDirtyCheckingInline(null));
-		assertFalse(enhancementContext.hasLazyLoadableAttributes(null));
-		assertFalse(enhancementContext.isLazyLoadable(null));
+	void testCreateEnhancementOptions() throws Exception {
+		Method createEnhancementOptionsMethod = HibernateEnhancerMojo.class.getDeclaredMethod("createEnhancementOptions");
+		createEnhancementOptionsMethod.setAccessible(true);
+		EnhancementOptions enhancementContext = (EnhancementOptions)createEnhancementOptionsMethod.invoke(enhanceMojo);
+		assertFalse(enhancementContext.doBiDirectionalAssociationManagement());
+		assertFalse(enhancementContext.doDirtyCheckingInline());
+		assertFalse(enhancementContext.doLazyInitialization());
+		assertFalse(enhancementContext.doLazyInitialization());
 		assertFalse(enhancementContext.doExtendedEnhancement(null));
-		// verify log messages
-		assertEquals(2, logMessages.size());
-		assertTrue(logMessages.contains(DEBUG + HibernateEnhancerMojo.CREATE_ENHANCEMENT_CONTEXT));
-		assertTrue(logMessages.contains(DEBUG + HibernateEnhancerMojo.CREATE_URL_CLASSLOADER_FOR_FOLDER.formatted(classesDirectory)));
-		logMessages.clear();
 		Field enableAssociationManagementField = HibernateEnhancerMojo.class.getDeclaredField("enableAssociationManagement");
 		enableAssociationManagementField.setAccessible(true);
 		enableAssociationManagementField.set(enhanceMojo, Boolean.TRUE);
-		enhancementContext = (EnhancementContext)createEnhancementContextMethod.invoke(enhanceMojo);
-		assertEquals(classesDirectory.toURI().toURL(), classLoader.getURLs()[0]);
-		assertTrue(enhancementContext.doBiDirectionalAssociationManagement(null));
-		assertFalse(enhancementContext.doDirtyCheckingInline(null));
-		assertFalse(enhancementContext.hasLazyLoadableAttributes(null));
-		assertFalse(enhancementContext.isLazyLoadable(null));
+		enhancementContext = (EnhancementOptions)createEnhancementOptionsMethod.invoke(enhanceMojo);
+		assertTrue(enhancementContext.doBiDirectionalAssociationManagement());
+		assertFalse(enhancementContext.doDirtyCheckingInline());
+		assertFalse(enhancementContext.doLazyInitialization());
+		assertFalse(enhancementContext.doLazyInitialization());
 		assertFalse(enhancementContext.doExtendedEnhancement(null));
-		// verify log messages
-		assertEquals(2, logMessages.size());
-		assertTrue(logMessages.contains(DEBUG + HibernateEnhancerMojo.CREATE_ENHANCEMENT_CONTEXT));
-		assertTrue(logMessages.contains(DEBUG + HibernateEnhancerMojo.CREATE_URL_CLASSLOADER_FOR_FOLDER.formatted(classesDirectory)));
-		logMessages.clear();
 		Field enableDirtyTrackingField = HibernateEnhancerMojo.class.getDeclaredField("enableDirtyTracking");
 		enableDirtyTrackingField.setAccessible(true);
 		enableDirtyTrackingField.set(enhanceMojo, Boolean.TRUE);
-		enhancementContext = (EnhancementContext)createEnhancementContextMethod.invoke(enhanceMojo);
-		assertEquals(classesDirectory.toURI().toURL(), classLoader.getURLs()[0]);
-		assertTrue(enhancementContext.doBiDirectionalAssociationManagement(null));
-		assertTrue(enhancementContext.doDirtyCheckingInline(null));
-		assertFalse(enhancementContext.hasLazyLoadableAttributes(null));
-		assertFalse(enhancementContext.isLazyLoadable(null));
+		enhancementContext = (EnhancementOptions)createEnhancementOptionsMethod.invoke(enhanceMojo);
+		assertTrue(enhancementContext.doBiDirectionalAssociationManagement());
+		assertTrue(enhancementContext.doDirtyCheckingInline());
+		assertFalse(enhancementContext.doLazyInitialization());
+		assertFalse(enhancementContext.doLazyInitialization());
 		assertFalse(enhancementContext.doExtendedEnhancement(null));
-		// verify log messages
-		assertEquals(2, logMessages.size());
-		assertTrue(logMessages.contains(DEBUG + HibernateEnhancerMojo.CREATE_ENHANCEMENT_CONTEXT));
-		assertTrue(logMessages.contains(DEBUG + HibernateEnhancerMojo.CREATE_URL_CLASSLOADER_FOR_FOLDER.formatted(classesDirectory)));
-		logMessages.clear();
 		Field enableLazyInitializationField = HibernateEnhancerMojo.class.getDeclaredField("enableLazyInitialization");
 		enableLazyInitializationField.setAccessible(true);
 		enableLazyInitializationField.set(enhanceMojo, Boolean.TRUE);
-		enhancementContext = (EnhancementContext)createEnhancementContextMethod.invoke(enhanceMojo);
-		assertEquals(classesDirectory.toURI().toURL(), classLoader.getURLs()[0]);
-		assertTrue(enhancementContext.doBiDirectionalAssociationManagement(null));
-		assertTrue(enhancementContext.doDirtyCheckingInline(null));
-		assertTrue(enhancementContext.hasLazyLoadableAttributes(null));
-		assertTrue(enhancementContext.isLazyLoadable(null));
+		enhancementContext = (EnhancementOptions)createEnhancementOptionsMethod.invoke(enhanceMojo);
+		assertTrue(enhancementContext.doBiDirectionalAssociationManagement());
+		assertTrue(enhancementContext.doDirtyCheckingInline());
+		assertTrue(enhancementContext.doLazyInitialization());
+		assertTrue(enhancementContext.doLazyInitialization());
 		assertFalse(enhancementContext.doExtendedEnhancement(null));
-		// verify log messages
-		assertEquals(2, logMessages.size());
-		assertTrue(logMessages.contains(DEBUG + HibernateEnhancerMojo.CREATE_ENHANCEMENT_CONTEXT));
-		assertTrue(logMessages.contains(DEBUG + HibernateEnhancerMojo.CREATE_URL_CLASSLOADER_FOR_FOLDER.formatted(classesDirectory)));
-		logMessages.clear();
 		Field enableExtendedEnhancementField = HibernateEnhancerMojo.class.getDeclaredField("enableExtendedEnhancement");
 		enableExtendedEnhancementField.setAccessible(true);
 		enableExtendedEnhancementField.set(enhanceMojo, Boolean.TRUE);
-		enhancementContext = (EnhancementContext)createEnhancementContextMethod.invoke(enhanceMojo);
-		assertEquals(classesDirectory.toURI().toURL(), classLoader.getURLs()[0]);
-		assertTrue(enhancementContext.doBiDirectionalAssociationManagement(null));
-		assertTrue(enhancementContext.doDirtyCheckingInline(null));
-		assertTrue(enhancementContext.hasLazyLoadableAttributes(null));
-		assertTrue(enhancementContext.isLazyLoadable(null));
-		assertTrue(enhancementContext.doExtendedEnhancement(null));
-		// verify log messages
-		assertEquals(2, logMessages.size());
-		assertTrue(logMessages.contains(DEBUG + HibernateEnhancerMojo.CREATE_ENHANCEMENT_CONTEXT));
-		assertTrue(logMessages.contains(DEBUG + HibernateEnhancerMojo.CREATE_URL_CLASSLOADER_FOR_FOLDER.formatted(classesDirectory)));
-		logMessages.clear();
+		enhancementContext = (EnhancementOptions)createEnhancementOptionsMethod.invoke(enhanceMojo);
+		assertTrue(enhancementContext.doBiDirectionalAssociationManagement());
+		assertTrue(enhancementContext.doDirtyCheckingInline());
+		assertTrue(enhancementContext.doLazyInitialization());
+		assertTrue(enhancementContext.doLazyInitialization());
+		assertFalse(enhancementContext.doExtendedEnhancement(null));
 	}
 
 	@Test
@@ -256,24 +225,9 @@ public class HibernateEnhancerMojoTest {
 		createEnhancerMethod.invoke(enhanceMojo);
 		enhancer = (Enhancer)enhancerField.get(enhanceMojo);
 		assertNotNull(enhancer);
-		Field byteByddyEnhancementContextField = EnhancerImpl.class.getDeclaredField("enhancementContext");
-		byteByddyEnhancementContextField.setAccessible(true);
-		Object byteByddyEnhancementContext = byteByddyEnhancementContextField.get(enhancer);
-		assertNotNull(byteByddyEnhancementContext);
-		Field enhancementContextField = byteByddyEnhancementContext.getClass().getDeclaredField("enhancementContext");
-		enhancementContextField.setAccessible(true);
-		EnhancementContext enhancementContext = (EnhancementContext)enhancementContextField.get(byteByddyEnhancementContext);
-		assertNotNull(enhancementContext);
-		ClassLoader classLoader = enhancementContext.getLoadingClassLoader();
-		assertNotNull(classLoader);
-		assertNotNull(classLoader);
-		URL fooResource = classLoader.getResource("bar/Foo.txt");
-		assertNotNull(fooResource);
-		assertEquals(fooTxtFile.toURI().toURL(), fooResource);
 		// verify log messages
-		assertEquals(3, logMessages.size());
+		assertEquals(2, logMessages.size());
 		assertTrue(logMessages.contains(DEBUG + HibernateEnhancerMojo.CREATE_BYTECODE_ENHANCER));
-		assertTrue(logMessages.contains(DEBUG + HibernateEnhancerMojo.CREATE_ENHANCEMENT_CONTEXT));
 		assertTrue(logMessages.contains(DEBUG + HibernateEnhancerMojo.CREATE_URL_CLASSLOADER_FOR_FOLDER.formatted(classesDirectory)));
 	}
 

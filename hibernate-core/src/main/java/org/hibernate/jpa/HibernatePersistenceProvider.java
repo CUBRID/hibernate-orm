@@ -4,7 +4,10 @@
  */
 package org.hibernate.jpa;
 
+import jakarta.annotation.Nonnull;
 import org.hibernate.boot.model.process.internal.EnhancementCandidates;
+import org.hibernate.SPI;
+import org.hibernate.Incubating;
 
 import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.PersistenceConfiguration;
@@ -16,10 +19,10 @@ import jakarta.persistence.spi.PersistenceUnitInfo;
 import jakarta.persistence.spi.ProviderUtil;
 import jakarta.annotation.Nullable;
 import org.hibernate.boot.registry.classloading.spi.ClassLoaderService;
-import org.hibernate.bytecode.enhance.spi.DefaultEnhancementContext;
-import org.hibernate.bytecode.enhance.spi.EnhancementContext;
-import org.hibernate.bytecode.enhance.spi.UnloadedClass;
-import org.hibernate.bytecode.enhance.spi.UnloadedField;
+import org.hibernate.bytecode.enhance.spi.EnhancementModel;
+import org.hibernate.bytecode.enhance.spi.EnhancementOptions;
+import org.hibernate.jpa.internal.enhance.PersistenceUnitEnhancementModel;
+import org.hibernate.jpa.internal.enhance.PersistenceUnitEnhancementState;
 import org.hibernate.bytecode.spi.BytecodeProvider;
 import org.hibernate.jpa.boot.internal.EntityManagerFactoryBuilderImpl;
 import org.hibernate.jpa.boot.spi.Bootstrap;
@@ -30,6 +33,7 @@ import org.hibernate.jpa.boot.spi.PersistenceXmlParser;
 import org.hibernate.jpa.internal.TransformerTracker;
 import org.hibernate.jpa.internal.TransformerTracker.TransformerKey;
 import org.hibernate.jpa.internal.enhance.EnhancingClassTransformerImpl;
+import org.hibernate.jpa.internal.enhance.ClientClassTransformer;
 import org.hibernate.jpa.internal.util.PersistenceUtilHelper;
 import org.hibernate.jpa.internal.util.PersistenceUtilHelper.MetadataCache;
 
@@ -57,6 +61,8 @@ import static org.hibernate.jpa.internal.JpaLogger.JPA_LOGGER;
  * @author Brett Meyer
  */
 public class HibernatePersistenceProvider implements PersistenceProvider {
+	private final PersistenceUnitEnhancementState.Registry enhancementStates = new PersistenceUnitEnhancementState.Registry();
+
 	/**
 	 * {@inheritDoc}
 	 *
@@ -272,8 +278,12 @@ public class HibernatePersistenceProvider implements PersistenceProvider {
 	}
 
 	@Override
-	public ClassTransformer getClassTransformer(PersistenceUnitInfo persistenceUnit, Map<?, ?> integrationSettings) {
-		final var enhancementCandidates = EnhancementCandidates.forContainer( persistenceUnit );
+	@Nonnull
+	public ClassTransformer getClassTransformer(
+			@Nonnull PersistenceUnitInfo persistenceUnit,
+			@Nullable Map<?, ?> integrationSettings) {
+		EnhancementCandidates.forContainer( persistenceUnit );
+		integrationSettings = integrationSettings == null ? Map.of() : integrationSettings;
 		var transformerKey = TransformerKey.from( persistenceUnit );
 		if ( !TransformerTracker.canSupplyTransformer( transformerKey ) ) {
 			if ( JPA_LOGGER.isTraceEnabled() ) {
@@ -318,6 +328,7 @@ public class HibernatePersistenceProvider implements PersistenceProvider {
 
 		if ( dirtyTrackingEnabled || lazyInitializationEnabled || associationManagementEnabled ) {
 			final var classLoader = persistenceUnit.getNewTempClassLoader();
+			//noinspection ConstantValue
 			if ( classLoader == null ) {
 				throw new PersistenceException( String.format( Locale.ROOT,
 						"[persistence unit: %s] Enhancement requires a temp class loader, but none was given",
@@ -325,27 +336,46 @@ public class HibernatePersistenceProvider implements PersistenceProvider {
 				) );
 			}
 
-			final var enhancementContext = createEnhancementContext(
-					dirtyTrackingEnabled,
-					lazyInitializationEnabled,
-					associationManagementEnabled,
-					integrationSettings,
-					persistenceUnit
-			);
-
-			final EnhancingClassTransformerImpl classTransformer =
-					new EnhancingClassTransformerImpl( enhancementContext );
-
-			// NOTE : the ClassTransformer method is called discoverType, but in reality it
-			// pre-enhances the classes...
-			enhancementCandidates.forEach( (className) -> {
-				classTransformer.discoverTypes( classLoader, className );
-			} );
+			final var state = enhancementStates.get(persistenceUnit, () -> createEnhancementModel(persistenceUnit));
+			final var provider = state.resolveProvider(getExplicitBytecodeProvider(integrationSettings, persistenceUnit));
+			state.discoverTemporaryTypes(classLoader, provider);
+			final var classTransformer = new EnhancingClassTransformerImpl(state,
+					EnhancementOptions.of(dirtyTrackingEnabled, lazyInitializationEnabled, associationManagementEnabled),
+					provider);
 
 			return classTransformer;
 		}
 
 		return null;
+	}
+
+	/// Returns an optional client-code transformer for a container to install.
+	/// Targets must already have compatible managed enhancement from tooling, or
+	/// the container must arrange it before defining them. When both transformations
+	/// apply to a class, managed enhancement precedes client enhancement; a client
+	/// may still be transformed before another class scheduled as its target.
+	/// Runtime managed-feature settings do not disable this transformer, since
+	/// tooling may already have enhanced its targets. Requesting this transformer
+	/// does not register or consume the managed-class transformer.
+	///
+	/// @since 8.1
+	@SPI
+	@Incubating(since = "8.1")
+	@Nonnull
+	public ClassTransformer getClientClassTransformer(
+			@Nonnull PersistenceUnitInfo info,
+			@Nullable Map<?, ?> properties) {
+		final var settings = properties == null ? Map.of() : properties;
+		final var temporaryLoader = info.getNewTempClassLoader();
+		//noinspection ConstantValue
+		if ( temporaryLoader == null ) {
+			throw new PersistenceException( "[persistence unit: " + info.getPersistenceUnitName()
+					+ "] Client enhancement requires a temp class loader, but none was given" );
+		}
+		final var state = enhancementStates.get(info, () -> createEnhancementModel(info));
+		final var provider = state.resolveProvider(getExplicitBytecodeProvider(settings, info));
+		state.discoverTemporaryTypes(temporaryLoader, provider);
+		return new ClientClassTransformer(state, provider);
 	}
 
 	private boolean resolveEnhancementProperty(
@@ -368,58 +398,9 @@ public class HibernatePersistenceProvider implements PersistenceProvider {
 		return defaultValue;
 	}
 
-	protected EnhancementContext createEnhancementContext(
-			final boolean dirtyTrackingEnabled,
-			final boolean lazyInitializationEnabled,
-			final boolean associationManagementEnabled,
-			Map<?, ?> integrationSettings,
-			PersistenceUnitInfo persistenceUnit) {
-		var overriddenBytecodeProvider = getExplicitBytecodeProvider( integrationSettings, persistenceUnit );
-
-		return new DefaultEnhancementContext() {
-			@Override
-			public boolean isEntityClass(UnloadedClass classDescriptor) {
-				return persistenceUnit.getAllClassNames().contains( classDescriptor.getName() )
-					&& super.isEntityClass( classDescriptor );
-			}
-
-			@Override
-			public boolean isCompositeClass(UnloadedClass classDescriptor) {
-				return persistenceUnit.getAllClassNames().contains( classDescriptor.getName() )
-					&& super.isCompositeClass( classDescriptor );
-			}
-
-			@Override
-			public boolean doBiDirectionalAssociationManagement(UnloadedField field) {
-				return associationManagementEnabled;
-			}
-
-			@Override
-			public boolean doDirtyCheckingInline(UnloadedClass classDescriptor) {
-				return dirtyTrackingEnabled;
-			}
-
-			@Override
-			public boolean hasLazyLoadableAttributes(UnloadedClass classDescriptor) {
-				return lazyInitializationEnabled;
-			}
-
-			@Override
-			public boolean isLazyLoadable(UnloadedField field) {
-				return lazyInitializationEnabled;
-			}
-
-			@Override
-			public boolean doExtendedEnhancement(UnloadedClass classDescriptor) {
-				// doesn't make any sense to have extended enhancement enabled at runtime. we only enhance entities anyway.
-				return false;
-			}
-
-			@Override
-			public BytecodeProvider getBytecodeProvider() {
-				return overriddenBytecodeProvider;
-			}
-		};
+	@SPI
+	protected EnhancementModel createEnhancementModel(PersistenceUnitInfo unit) {
+		return new PersistenceUnitEnhancementModel(EnhancementCandidates.forContainer(unit));
 	}
 
 	private BytecodeProvider getExplicitBytecodeProvider(

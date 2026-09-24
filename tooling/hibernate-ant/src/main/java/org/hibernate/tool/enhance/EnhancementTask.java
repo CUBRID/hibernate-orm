@@ -9,11 +9,11 @@ import org.apache.tools.ant.Project;
 import org.apache.tools.ant.Task;
 import org.apache.tools.ant.types.FileSet;
 import org.apache.tools.ant.types.Resource;
-import org.hibernate.bytecode.enhance.spi.DefaultEnhancementContext;
-import org.hibernate.bytecode.enhance.spi.EnhancementContext;
+import org.hibernate.bytecode.enhance.spi.DefaultEnhancementModel;
+import org.hibernate.bytecode.enhance.spi.EnhancementEnvironment;
+import org.hibernate.bytecode.enhance.spi.EnhancementOptions;
 import org.hibernate.bytecode.enhance.spi.Enhancer;
-import org.hibernate.bytecode.enhance.spi.UnloadedClass;
-import org.hibernate.bytecode.enhance.spi.UnloadedField;
+import org.hibernate.bytecode.enhance.internal.EnhancementPipeline;
 import org.hibernate.bytecode.spi.BytecodeProvider;
 
 import java.io.ByteArrayOutputStream;
@@ -71,7 +71,8 @@ public class EnhancementTask extends Task {
 	private boolean enableLazyInitialization = true;
 	private boolean enableDirtyTracking = true;
 	private boolean enableAssociationManagement = false;
-	private boolean enableExtendedEnhancement = false;
+	private Boolean enableExtendedEnhancement;
+	private Boolean enableClientEnhancement;
 	private List<File> sourceSet = new ArrayList<>();
 
 	public void addFileset(FileSet set) {
@@ -102,16 +103,28 @@ public class EnhancementTask extends Task {
 		this.enableAssociationManagement = enableAssociationManagement;
 	}
 
+	@Deprecated(forRemoval = true)
 	public void setEnableExtendedEnhancement(boolean enableExtendedEnhancement) {
 		this.enableExtendedEnhancement = enableExtendedEnhancement;
 	}
 
+	public void setEnableClientEnhancement(boolean enabled) {
+		this.enableClientEnhancement = enabled;
+	}
+
+	private boolean clientEnhancementEnabled() {
+		return enableClientEnhancement != null ? enableClientEnhancement : Boolean.TRUE.equals( enableExtendedEnhancement );
+	}
+
 	private boolean shouldApply() {
-		return enableLazyInitialization || enableDirtyTracking || enableAssociationManagement || enableExtendedEnhancement;
+		return enableLazyInitialization || enableDirtyTracking || enableAssociationManagement || clientEnhancementEnabled();
 	}
 
 	@Override
 	public void execute() throws BuildException {
+		if ( enableExtendedEnhancement != null ) {
+			log( "enableExtendedEnhancement is deprecated; use enableClientEnhancement, which takes precedence when both are set", Project.MSG_WARN );
+		}
 		if ( !enableLazyInitialization ) {
 			log( "The 'enableLazyInitialization' configuration is deprecated and will be removed. Set the value to 'true' to get rid of this warning", Project.MSG_WARN );
 		}
@@ -168,61 +181,35 @@ public class EnhancementTask extends Task {
 
 		ClassLoader classLoader = toClassLoader( Collections.singletonList( new File( base ) ) );
 
-		EnhancementContext enhancementContext = new DefaultEnhancementContext() {
-			@Override
-			public ClassLoader getLoadingClassLoader() {
-				return classLoader;
-			}
-
-			@Override
-			public boolean doBiDirectionalAssociationManagement(UnloadedField field) {
-				return enableAssociationManagement;
-			}
-
-			@Override
-			public boolean doDirtyCheckingInline(UnloadedClass classDescriptor) {
-				return enableDirtyTracking;
-			}
-
-			@Override
-			public boolean hasLazyLoadableAttributes(UnloadedClass classDescriptor) {
-				return enableLazyInitialization;
-			}
-
-			@Override
-			public boolean isLazyLoadable(UnloadedField field) {
-				return enableLazyInitialization;
-			}
-
-			@Override
-			public boolean doExtendedEnhancement(UnloadedClass classDescriptor) {
-				return enableExtendedEnhancement;
-			}
-		};
-
-		if ( enableExtendedEnhancement ) {
-			DEPRECATION_LOGGER.deprecatedSettingForRemoval("extended enhancement", "false");
-		}
+		final var options = EnhancementOptions.of(enableDirtyTracking, enableLazyInitialization, enableAssociationManagement);
 
 		if ( enableAssociationManagement ) {
 			DEPRECATION_LOGGER.deprecatedSettingForRemoval( "management of bidirectional association persistent attributes", "false" );
 		}
 
 		final BytecodeProvider bytecodeProvider = buildDefaultBytecodeProvider();
-		try {
-			Enhancer enhancer = bytecodeProvider.getEnhancer( enhancementContext );
+		try (var pipeline = new EnhancementPipeline(bytecodeProvider.createEnhancementSession(
+				new DefaultEnhancementModel(), EnhancementEnvironment.forClassLoader(classLoader)), options,
+					enableLazyInitialization || enableDirtyTracking || enableAssociationManagement,
+					clientEnhancementEnabled() )) {
+			final var managedPass = pipeline.managedPass();
 			for ( File file : sourceSet ) {
-				discoverTypes( file, enhancer );
+				discoverTypes( file, managedPass );
 				log( "Successfully discovered types for class [" + file + "]", Project.MSG_INFO );
 			}
-			for ( File file : sourceSet ) {
-				byte[] enhancedBytecode = doEnhancement( file, enhancer );
-				if ( enhancedBytecode == null ) {
-					continue;
-				}
-				writeOutEnhancedClass( enhancedBytecode, file );
+			final var passes = clientEnhancementEnabled()
+					? List.of( false, true ) : List.of( false );
+			for ( var clientPass : passes ) {
+				final var enhancer = clientPass ? pipeline.clientPass() : managedPass;
+				for ( File file : sourceSet ) {
+					byte[] enhancedBytecode = doEnhancement( file, enhancer );
+					if ( enhancedBytecode == null ) {
+						continue;
+					}
+					writeOutEnhancedClass( enhancedBytecode, file );
 
-				log( "Successfully enhanced class [" + file + "]", Project.MSG_INFO );
+					log( "Successfully enhanced class [" + file + "]", Project.MSG_INFO );
+				}
 			}
 		}
 		finally {

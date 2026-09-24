@@ -16,6 +16,7 @@ import org.apache.maven.shared.model.fileset.FileSet;
 import org.apache.maven.shared.model.fileset.util.FileSetManager;
 import org.hibernate.bytecode.enhance.spi.EnhancementException;
 import org.hibernate.bytecode.enhance.spi.Enhancer;
+import org.hibernate.bytecode.enhance.internal.EnhancementPipeline;
 import org.hibernate.bytecode.internal.BytecodeProviderInitiator;
 
 import java.io.File;
@@ -29,6 +30,9 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import org.hibernate.bytecode.enhance.spi.DefaultEnhancementModel;
+import org.hibernate.bytecode.enhance.spi.EnhancementEnvironment;
+import org.hibernate.bytecode.enhance.spi.EnhancementOptions;
 
 /**
  * Maven mojo for performing build-time enhancement of entity objects.
@@ -41,6 +45,7 @@ public class HibernateEnhancerMojo extends AbstractMojo {
 
 	final private List<SourceEntry> sourceSet = new ArrayList<>();
 	private Enhancer enhancer;
+	private EnhancementPipeline enhancementPipeline;
 
 	/**
 	 * A list of FileSets in which to look for classes to enhance.
@@ -93,10 +98,13 @@ public class HibernateEnhancerMojo extends AbstractMojo {
 	 * A boolean that indicates whether or not to add extended enhancement.
 	 * This setting will provide bytecode enhancement, even for non-entity classes
 	 */
-	@Parameter(
-			defaultValue = "false",
-			required = true)
-	private boolean enableExtendedEnhancement;
+	@Deprecated(forRemoval = true)
+	@Parameter
+	private Boolean enableExtendedEnhancement;
+
+	/** Enables client field-access enhancement; takes precedence over the legacy alias. */
+	@Parameter
+	private Boolean enableClientEnhancement;
 
 	/**
 	 * The Maven Project Object
@@ -110,8 +118,14 @@ public class HibernateEnhancerMojo extends AbstractMojo {
 		if (enhancementIsNeeded()) {
 			assembleSourceSet();
 			createEnhancer();
+			try (var pipeline = enhancementPipeline) {
 			discoverTypes();
 			performEnhancement();
+			if ( clientEnhancementEnabled() ) {
+				enhancer = enhancementPipeline.clientPass();
+				performEnhancement();
+			}
+		}
 		}
 		getLog().debug(ENDING_EXECUTION_OF_ENHANCE_MOJO);
 	}
@@ -121,10 +135,17 @@ public class HibernateEnhancerMojo extends AbstractMojo {
 		return enableAssociationManagement ||
 			enableDirtyTracking ||
 			enableLazyInitialization ||
-			enableExtendedEnhancement;
+			clientEnhancementEnabled();
+	}
+
+	private boolean clientEnhancementEnabled() {
+		return enableClientEnhancement != null ? enableClientEnhancement : Boolean.TRUE.equals( enableExtendedEnhancement );
 	}
 
 	private void processParameters() {
+		if ( enableExtendedEnhancement != null ) {
+			getLog().warn( "enableExtendedEnhancement is deprecated; use enableClientEnhancement, which takes precedence when both are set" );
+		}
 		if (!enableLazyInitialization) {
 			getLog().warn(ENABLE_LAZY_INITIALIZATION_DEPRECATED);
 		}
@@ -206,21 +227,19 @@ public class HibernateEnhancerMojo extends AbstractMojo {
 				Enhancer.class.getClassLoader());
 	}
 
-	private EnhancementContext createEnhancementContext() throws MojoExecutionException {
-		getLog().debug(CREATE_ENHANCEMENT_CONTEXT) ;
-		return new EnhancementContext(
-				createClassLoader(),
-				enableAssociationManagement,
-				enableDirtyTracking,
-				enableLazyInitialization,
-				enableExtendedEnhancement);
+	private EnhancementOptions createEnhancementOptions() {
+		return EnhancementOptions.of(enableDirtyTracking, enableLazyInitialization, enableAssociationManagement);
 	}
 
 	private void createEnhancer() throws MojoExecutionException {
 		getLog().debug(CREATE_BYTECODE_ENHANCER) ;
-		enhancer = BytecodeProviderInitiator
+		enhancementPipeline = new EnhancementPipeline( BytecodeProviderInitiator
 				.buildDefaultBytecodeProvider()
-				.getEnhancer(createEnhancementContext());
+				.createEnhancementSession(new DefaultEnhancementModel(), EnhancementEnvironment.forClassLoader(createClassLoader())),
+				createEnhancementOptions(),
+				enableLazyInitialization || enableDirtyTracking || enableAssociationManagement,
+				clientEnhancementEnabled() );
+		enhancer = enhancementPipeline.managedPass();
 	}
 
 	private void discoverTypes() throws MojoExecutionException {
