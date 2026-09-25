@@ -29,6 +29,7 @@ import org.hibernate.SessionFactory;
 import org.hibernate.SessionFactoryObserver;
 import org.hibernate.boot.MetadataBuilder;
 import org.hibernate.boot.MetadataSources;
+import org.hibernate.boot.internal.BootstrapRegistryLifecycle;
 import org.hibernate.boot.SessionFactoryBuilder;
 import org.hibernate.boot.model.convert.internal.ConverterDescriptors;
 import org.hibernate.boot.jaxb.spi.Binding;
@@ -200,6 +201,11 @@ public class Configuration {
 		metadataSources = new MetadataSources( serviceRegistry, createMappingBinderAccess( serviceRegistry ) );
 		standardServiceRegistryBuilder = new StandardServiceRegistryBuilder( bootstrapServiceRegistry );
 		properties.putAll( standardServiceRegistryBuilder.getSettings() );
+	}
+
+	private boolean isXmlMappingEnabled() {
+		final var setting = properties.get( MappingSettings.XML_MAPPING_ENABLED );
+		return setting == null || org.hibernate.engine.config.spi.StandardConverters.BOOLEAN.convert( setting );
 	}
 
 	private XmlMappingBinderAccess createMappingBinderAccess(BootstrapServiceRegistry serviceRegistry) {
@@ -602,7 +608,9 @@ public class Configuration {
 	 * @see #addFile(File)
 	 */
 	public Configuration addFile(String xmlFile) throws MappingException {
-		metadataSources.addFile( xmlFile );
+		if ( isXmlMappingEnabled() ) {
+			metadataSources.addFile( xmlFile );
+		}
 		return this;
 	}
 
@@ -616,7 +624,9 @@ public class Configuration {
 	 * @throws MappingException Indicates inability to locate the specified mapping file
 	 */
 	public Configuration addFile(File xmlFile) throws MappingException {
-		metadataSources.addFile( xmlFile );
+		if ( isXmlMappingEnabled() ) {
+			metadataSources.addFile( xmlFile );
+		}
 		return this;
 	}
 
@@ -662,7 +672,9 @@ public class Configuration {
 	 * processing the non-cached file.
 	 */
 	public Configuration addCacheableFile(File xmlFile) throws MappingException {
-		metadataSources.addCacheableFile( xmlFile );
+		if ( isXmlMappingEnabled() ) {
+			metadataSources.addCacheableFile( xmlFile );
+		}
 		return this;
 	}
 
@@ -680,7 +692,9 @@ public class Configuration {
 	 * @throws SerializationException Indicates a problem deserializing the cached dom tree
 	 */
 	public Configuration addCacheableFileStrictly(File xmlFile) throws SerializationException {
-		metadataSources.addCacheableFileStrictly( xmlFile );
+		if ( isXmlMappingEnabled() ) {
+			metadataSources.addCacheableFileStrictly( xmlFile );
+		}
 		return this;
 	}
 
@@ -698,7 +712,9 @@ public class Configuration {
 	 * @see #addCacheableFile(File)
 	 */
 	public Configuration addCacheableFile(String xmlFile) throws MappingException {
-		metadataSources.addCacheableFile( xmlFile );
+		if ( isXmlMappingEnabled() ) {
+			metadataSources.addCacheableFile( xmlFile );
+		}
 		return this;
 	}
 
@@ -713,7 +729,9 @@ public class Configuration {
 	 * the mapping document.
 	 */
 	public Configuration addURL(URL url) throws MappingException {
-		metadataSources.addURL( url );
+		if ( isXmlMappingEnabled() ) {
+			metadataSources.addURL( url );
+		}
 		return this;
 	}
 
@@ -728,7 +746,9 @@ public class Configuration {
 	 * processing the contained mapping document.
 	 */
 	public Configuration addInputStream(InputStream xmlInputStream) throws MappingException {
-		metadataSources.addInputStream( xmlInputStream );
+		if ( isXmlMappingEnabled() ) {
+			metadataSources.addInputStream( xmlInputStream );
+		}
 		return this;
 	}
 
@@ -745,7 +765,9 @@ public class Configuration {
 	 * processing the contained mapping document.
 	 */
 	public Configuration addResource(String resourceName) throws MappingException {
-		metadataSources.addResource( resourceName );
+		if ( isXmlMappingEnabled() ) {
+			metadataSources.addResource( resourceName );
+		}
 		return this;
 	}
 
@@ -885,7 +907,9 @@ public class Configuration {
 	 */
 	@Remove
 	public Configuration addJar(File jar) throws MappingException {
-		metadataSources.addJar( jar );
+		if ( isXmlMappingEnabled() ) {
+			metadataSources.addJar( jar );
+		}
 		return this;
 	}
 
@@ -903,7 +927,9 @@ public class Configuration {
 	 * processing the contained mapping documents.
 	 */
 	public Configuration addDirectory(File dir) throws MappingException {
-		metadataSources.addDirectory( dir );
+		if ( isXmlMappingEnabled() ) {
+			metadataSources.addDirectory( dir );
+		}
 		return this;
 	}
 
@@ -1187,12 +1213,15 @@ public class Configuration {
 	public SessionFactory buildSessionFactory() throws HibernateException {
 		CORE_LOGGER.buildingFactoryWithInternalRegistryBuilder();
 		standardServiceRegistryBuilder.applySettings( properties );
-		var serviceRegistry = standardServiceRegistryBuilder.build();
+		final var lifecycle = new BootstrapRegistryLifecycle( null );
+		final var serviceRegistry = lifecycle.register( standardServiceRegistryBuilder.build() );
 		try {
-			return buildSessionFactory( serviceRegistry );
+			final var factory = buildSessionFactory( serviceRegistry );
+			lifecycle.transferOwnership();
+			return factory;
 		}
 		catch (Throwable t) {
-			serviceRegistry.close();
+			lifecycle.close( t );
 			throw t;
 		}
 	}
