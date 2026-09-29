@@ -97,6 +97,8 @@ jobs:
         env:
           GRADLE_ARGS: ${{ inputs.gradle-args || 'ciCheck' }}
           MAVEN_MIRROR: "https://maven-central.storage-download.googleapis.com/maven2/"
+          # CUBRID runs the whole suite in one test JVM, which outgrows the default 512m metaspace
+          ORG_GRADLE_PROJECT_toolchain.launcher.jvmargs: "-Dlog4j2.disableJmx=true -Xmx2g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError -Duser.language=en -Duser.country=US -Duser.timezone=UTC -Dfile.encoding=UTF-8"
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
