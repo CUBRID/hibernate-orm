@@ -18,6 +18,7 @@ import org.hibernate.boot.jaxb.Origin;
 import org.hibernate.boot.jaxb.SourceType;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmHibernateMapping;
 import org.hibernate.boot.jaxb.hbm.transform.HbmXmlTransformer;
+import org.hibernate.boot.jaxb.hbm.transform.TransformationException;
 import org.hibernate.boot.jaxb.hbm.transform.UnsupportedFeatureHandling;
 import org.hibernate.boot.jaxb.internal.stax.HbmEventReader;
 import org.hibernate.boot.jaxb.mapping.GenerationTiming;
@@ -941,6 +942,43 @@ public class HbmTransformationJaxbTests {
 		)
 				.isInstanceOf( UnsupportedOperationException.class )
 				.hasMessageContaining( "polymorphism" );
+	}
+
+	@Test
+	@JiraKey( "HHH-20907" )
+	public void testUnsupportedCascadeLockThrowsException(ServiceRegistryScope scope) {
+		// cascade="lock" is not supported and should throw an UnsupportedOperationException
+		assertThatThrownBy( () ->
+				transformAndVerify( "xml/jaxb/mapping/cascade-lock/hbm.xml", scope, transformed -> {} )
+		)
+				.isInstanceOf( TransformationException.class )
+				.rootCause()
+				.isInstanceOf( UnsupportedOperationException.class )
+				.hasMessageContaining( "Unsupported cascade style: lock" );
+	}
+
+	@Test
+	@JiraKey( "HHH-20908" )
+	public void testClassProxyAttributeIsUnsupported(ServiceRegistryScope scope) {
+		// The <class proxy="..."> attribute has no equivalent in mapping.xsd,
+		// so the transformer must route it through handleUnsupported.
+		assertThatThrownBy( () ->
+				transformAndVerify( "xml/jaxb/mapping/proxy-attribute/hbm.xml", scope, transformed -> {} )
+		)
+				.isInstanceOf( UnsupportedOperationException.class )
+				.hasMessageContaining( "proxy" );
+	}
+
+	@Test
+	@JiraKey( "HHH-20908" )
+	public void testSubClassProxyAttributeIsUnsupported(ServiceRegistryScope scope) {
+		// The <subclass proxy="..."> attribute has no equivalent in mapping.xsd,
+		// so the transformer must route it through handleUnsupported.
+		assertThatThrownBy( () ->
+				transformAndVerify( "xml/jaxb/mapping/proxy-attribute/hbm2.xml", scope, transformed -> {} )
+		)
+				.isInstanceOf( UnsupportedOperationException.class )
+				.hasMessageContaining( "proxy" );
 	}
 
 	private void transformAndVerify(
@@ -2406,6 +2444,74 @@ public class HbmTransformationJaxbTests {
 			assertThat( employeeAttr.getMappedBy() )
 					.as( "inverse side should have mapped-by='info'" )
 					.isEqualTo( "info" );
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-20900" )
+	public void testManyToManyForeignKeyTransformation(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/many-to-many-fk/hbm.xml", scope, transformed -> {
+			assertThat( transformed.getEntities() ).hasSize( 2 );
+
+			final JaxbEntityImpl studentEntity = transformed.getEntities().stream()
+					.filter( e -> "Student".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( studentEntity.getAttributes().getManyToManyAttributes() ).hasSize( 1 );
+			final JaxbManyToManyImpl courses = studentEntity.getAttributes().getManyToManyAttributes().get( 0 );
+			assertThat( courses.getName() ).isEqualTo( "courses" );
+
+			assertThat( courses.getJoinTable() )
+					.as( "Owning side should have a join-table" )
+					.isNotNull();
+			assertThat( courses.getJoinTable().getName() ).isEqualTo( "student_course" );
+
+			assertThat( courses.getJoinTable().getForeignKey() )
+					.as( "Foreign key from <key foreign-key='...'> should be set on join-table" )
+					.isNotNull();
+			assertThat( courses.getJoinTable().getForeignKey().getName() )
+					.as( "Foreign key name from join table to owning entity should be preserved" )
+					.isEqualTo( "fk_student_course" );
+
+			assertThat( courses.getJoinTable().getInverseForeignKey() )
+					.as( "Inverse foreign key from <many-to-many foreign-key='...'> should be set on join-table" )
+					.isNotNull();
+			assertThat( courses.getJoinTable().getInverseForeignKey().getName() )
+					.as( "Inverse foreign key name from join table to target entity should be preserved" )
+					.isEqualTo( "fk_course_student" );
+		} );
+	}
+
+	@Test
+	@JiraKey("HHH-20901")
+	public void testCollectionBatchSizeTransformation(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/collection-batch-size/hbm.xml", scope, transformed -> {
+			assertThat( transformed.getEntities() ).hasSize( 2 );
+
+			final JaxbEntityImpl authorEntity = transformed.getEntities().stream()
+					.filter( e -> "Author".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( authorEntity.getAttributes().getManyToManyAttributes() ).hasSize( 1 );
+			final JaxbManyToManyImpl books = authorEntity.getAttributes().getManyToManyAttributes().get( 0 );
+			assertThat( books.getName() ).isEqualTo( "books" );
+			assertThat( books.getBatchSize() )
+					.as( "batch-size from <set> should be transferred to many-to-many" )
+					.isEqualTo( 25 );
+
+			final JaxbEntityImpl bookEntity = transformed.getEntities().stream()
+					.filter( e -> "Book".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( bookEntity.getAttributes().getManyToManyAttributes() ).hasSize( 1 );
+			final JaxbManyToManyImpl authors = bookEntity.getAttributes().getManyToManyAttributes().get( 0 );
+			assertThat( authors.getName() ).isEqualTo( "authors" );
+			assertThat( authors.getBatchSize() )
+					.as( "batch-size from inverse <set> should be transferred to many-to-many" )
+					.isEqualTo( 25 );
 		} );
 	}
 }
