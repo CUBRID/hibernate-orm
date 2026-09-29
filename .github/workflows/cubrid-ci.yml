@@ -51,13 +51,19 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Merge main
-        # Fails on conflict, which is the signal that an upstream change collides
-        # with ours. Nothing is pushed: the merge only exists for this run.
+        # A conflict means an upstream change collides with ours: warn and test the
+        # branch alone, so the day still gets results. Nothing is pushed.
         run: |
           git fetch --no-tags origin main
-          git -c user.name=github-actions[bot] \
-              -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
-              merge --no-edit FETCH_HEAD
+          if ! git -c user.name=github-actions[bot] \
+                  -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
+                  merge --no-edit FETCH_HEAD; then
+            git merge --abort
+            echo "::warning::main does not merge cleanly into $REF, so this run tests $REF alone"
+            echo "main does not merge cleanly into \`$REF\`, so this run tests \`$REF\` alone." >> "$GITHUB_STEP_SUMMARY"
+          fi
+        env:
+          REF: ${{ inputs.ref || 'cubrid-daily' }}
       - name: Reclaim disk space
         run: .github/ci-prerequisites.sh
       - name: Start CUBRID ${{ matrix.cubrid-version }}
