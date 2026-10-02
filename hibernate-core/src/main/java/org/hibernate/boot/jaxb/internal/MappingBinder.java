@@ -1,7 +1,3 @@
-/*
- * SPDX-License-Identifier: Apache-2.0
- * Copyright Red Hat Inc. and Hibernate Authors
- */
 package org.hibernate.boot.jaxb.internal;
 
 import java.util.function.Function;
@@ -16,8 +12,8 @@ import org.hibernate.boot.UnsupportedOrmXsdVersionException;
 import org.hibernate.boot.jaxb.Origin;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmHibernateMapping;
 import org.hibernate.boot.jaxb.hbm.transform.UnsupportedFeatureHandling;
+import org.hibernate.boot.jaxb.internal.stax.AbstractEventReader;
 import org.hibernate.boot.jaxb.internal.stax.HbmEventReader;
-import org.hibernate.boot.jaxb.internal.stax.JpaOrmXmlEventReader;
 import org.hibernate.boot.jaxb.internal.stax.MappingEventReader;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbEntityMappingsImpl;
 import org.hibernate.boot.jaxb.spi.Binding;
@@ -183,7 +179,7 @@ public class MappingBinder extends AbstractBinder<JaxbBindableMappingDescriptor>
 				//noinspection unchecked
 				return new Binding<>( (X) bindingRoot, origin );
 			}
-			catch (JpaOrmXmlEventReader.BadVersionException e) {
+			catch (AbstractEventReader.BadVersionException e) {
 				throw new UnsupportedOrmXsdVersionException( e.getRequestedVersion(), origin );
 			}
 		}

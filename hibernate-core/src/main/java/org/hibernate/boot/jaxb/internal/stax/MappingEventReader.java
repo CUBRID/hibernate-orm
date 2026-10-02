@@ -1,7 +1,3 @@
-/*
- * SPDX-License-Identifier: Apache-2.0
- * Copyright Red Hat Inc. and Hibernate Authors
- */
 package org.hibernate.boot.jaxb.internal.stax;
 
 import javax.xml.stream.XMLEventFactory;
@@ -24,6 +20,11 @@ public class MappingEventReader extends AbstractEventReader {
 
 	@Override
 	protected boolean shouldBeMappedToLatestJpaDescriptor(String uri) {
-		return !MappingXsdSupport.latestDescriptor().getNamespaceUri().equals( uri );
+		return uri.isEmpty()
+				|| MappingXsdSupport._70.getNamespaceUri().equals( uri )
+				|| MappingXsdSupport._80.getNamespaceUri().equals( uri )
+				|| MappingXsdSupport.jpa10.getNamespaceUri().equals( uri )
+				|| MappingXsdSupport.jpa21.getNamespaceUri().equals( uri )
+				|| MappingXsdSupport.jpa30.getNamespaceUri().equals( uri );
 	}
 }

@@ -1,7 +1,3 @@
-/*
- * SPDX-License-Identifier: Apache-2.0
- * Copyright Red Hat Inc. and Hibernate Authors
- */
 package org.hibernate.orm.test.id.uuid;
 
 import java.util.List;
@@ -81,6 +77,27 @@ public class PostgreSQLUUIDTest {
 					.addScalar( "id", StandardBasicTypes.UUID )
 					.getResultList();
 			assertThat( books, hasSize( 1 ) );
+		} );
+	}
+
+	@Test
+	@JiraKey("HHH-13484")
+	public void testNativeSQLUUIDAutoDiscovery(SessionFactoryScope scope) {
+		scope.inTransaction( session -> {
+			final List<?> results = session.createNativeQuery( "select id from Book" ).getResultList();
+			Assertions.assertEquals( 1, results.size() );
+			Assertions.assertInstanceOf( UUID.class, results.get( 0 ) );
+			Assertions.assertEquals( id, results.get( 0 ) );
+		} );
+	}
+
+	@Test
+	@JiraKey("HHH-13484")
+	public void testTypedNativeSQLUUID(SessionFactoryScope scope) {
+		scope.inTransaction( session -> {
+			final List<UUID> results = session.createNativeQuery( "select id from Book", UUID.class )
+					.getResultList();
+			Assertions.assertEquals( List.of( id ), results );
 		} );
 	}
 

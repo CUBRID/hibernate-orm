@@ -1,11 +1,9 @@
-/*
- * SPDX-License-Identifier: Apache-2.0
- * Copyright Red Hat Inc. and Hibernate Authors
- */
 package org.hibernate.orm.test.boot.jaxb.mapping;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.StringReader;
+import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
@@ -57,6 +55,7 @@ import jakarta.xml.bind.JAXBException;
 
 import static java.util.Collections.singletonList;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hibernate.orm.test.boot.jaxb.JaxbHelper.withStaxEventReader;
 
@@ -65,6 +64,27 @@ import static org.hibernate.orm.test.boot.jaxb.JaxbHelper.withStaxEventReader;
  */
 @ServiceRegistry
 public class HbmTransformationJaxbTests {
+	@Test
+	public void hbmTransformationNamespaceTest(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/basic/hbm.xml", scope, transformed -> {
+			assertThatCode( () -> {
+				final var context = JAXBContext.newInstance( JaxbEntityMappingsImpl.class );
+				final var writer = new StringWriter();
+				context.createMarshaller().marshal( transformed, writer );
+				final String xml = writer.toString();
+				assertThat( xml ).contains( "https://www.hibernate.org/xsd/orm/mapping", "version=\"8.0\"" )
+						.doesNotContain( "http://www.hibernate.org/xsd/orm/mapping" );
+				final var unmarshaller = context.createUnmarshaller();
+				final var roundTrip = (JaxbEntityMappingsImpl) unmarshaller.unmarshal(
+						new StringReader( xml )
+				);
+				assertThat( roundTrip.getEntities() ).hasSize( 1 );
+				assertThat( roundTrip.getEntities().get( 0 ).getClazz() )
+						.isEqualTo( transformed.getEntities().get( 0 ).getClazz() );
+			} ).doesNotThrowAnyException();
+		} );
+	}
+
 	@Test
 	public void hbmTransformationTest(ServiceRegistryScope scope) {
 		transformAndVerify( "xml/jaxb/mapping/basic/hbm.xml", scope, transformed -> {
@@ -802,6 +822,78 @@ public class HbmTransformationJaxbTests {
 							.isEqualTo( "resident" );
 				}
 		);
+	}
+
+	@Test
+	public void testOneToOnePropertyRefInferredTargetTransformation(ServiceRegistryScope scope) {
+		transformAndVerifyMultiple(
+				new String[] { "xml/jaxb/mapping/one-to-one-property-ref-inferred/hbm.xml" },
+				scope,
+				(transformedRoots) -> {
+					final JaxbEntityMappingsImpl transformed = transformedRoots.get( 0 );
+					assertThat( transformed.getEntities() ).hasSize( 2 );
+
+					final JaxbEntityImpl personEntity = transformed.getEntities().stream()
+							.filter( e -> "Person".equals( e.getClazz() ) )
+							.findFirst()
+							.orElseThrow();
+
+					assertThat( personEntity.getAttributes().getOneToOneAttributes() ).hasSize( 1 );
+					final JaxbOneToOneImpl address = personEntity.getAttributes().getOneToOneAttributes().get( 0 );
+					assertThat( address.getName() ).isEqualTo( "address" );
+
+					assertThat( address.getMappedBy() )
+							.as( "One-to-one with property-ref but no class attribute should still generate mapped-by" )
+							.isEqualTo( "resident" );
+					assertThat( address.getPropertyRef() )
+							.as( "Property-ref is represented as mapped-by, so no <property-ref> should be emitted" )
+							.isNull();
+					assertThat( address.getTargetEntity() )
+							.as( "Target entity should be inferred from the boot model" )
+							.isEqualTo( "org.hibernate.orm.test.ops.Address" );
+				}
+		);
+	}
+
+	@Test
+	public void testCollectionKeyPropertyRefTransformation(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/collection-key-property-ref/hbm.xml", scope, transformed -> {
+			assertThat( transformed.getEntities() ).hasSize( 2 );
+
+			final JaxbEntityImpl personEntity = transformed.getEntities().stream()
+					.filter( e -> "Person".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( personEntity.getAttributes().getElementCollectionAttributes() ).hasSize( 1 );
+			final var systems = personEntity.getAttributes().getElementCollectionAttributes().get( 0 );
+			assertThat( systems.getName() ).isEqualTo( "systems" );
+			final var collectionTable = systems.getCollectionTable();
+			assertThat( collectionTable ).isNotNull();
+			assertThat( collectionTable.getJoinColumns() ).hasSize( 1 );
+			final var keyJoinColumn = collectionTable.getJoinColumns().get( 0 );
+			assertThat( keyJoinColumn.getName() ).isEqualTo( "USER_ID" );
+			assertThat( keyJoinColumn.getReferencedColumnName() )
+					.as( "Collection <key property-ref='userId'> should reference the alternate-key column" )
+					.isEqualTo( "person_userid" );
+
+			final JaxbEntityImpl groupEntity = transformed.getEntities().stream()
+					.filter( e -> "Group".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( groupEntity.getAttributes().getManyToManyAttributes() ).hasSize( 1 );
+			final var users = groupEntity.getAttributes().getManyToManyAttributes().get( 0 );
+			assertThat( users.getName() ).isEqualTo( "users" );
+			final var joinTable = users.getJoinTable();
+			assertThat( joinTable ).isNotNull();
+			assertThat( joinTable.getInverseJoinColumn() ).hasSize( 1 );
+			final var elementJoinColumn = joinTable.getInverseJoinColumn().get( 0 );
+			assertThat( elementJoinColumn.getName() ).isEqualTo( "userId" );
+			assertThat( elementJoinColumn.getReferencedColumnName() )
+					.as( "<many-to-many property-ref='userId'> should reference the alternate-key column" )
+					.isEqualTo( "person_userid" );
+		} );
 	}
 
 	@Test

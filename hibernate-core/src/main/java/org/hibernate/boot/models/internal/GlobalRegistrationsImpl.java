@@ -1,7 +1,3 @@
-/*
- * SPDX-License-Identifier: Apache-2.0
- * Copyright Red Hat Inc. and Hibernate Authors
- */
 package org.hibernate.boot.models.internal;
 
 import java.lang.annotation.Annotation;
@@ -1111,6 +1107,10 @@ public class GlobalRegistrationsImpl implements GlobalRegistrations, GlobalRegis
 				final var converterType =
 						getClassDetailsRegistry()
 								.resolveClassDetails( converterClassName );
+				// A managed converter class may have already been registered without an auto-apply setting.
+				// The XML declaration must take precedence over that implicit registration.
+				jpaConverters.removeIf( registration ->
+						registration.converterClass().equals( converterType ) && registration.autoApply() == null );
 				jpaConverters.add( new ConverterRegistration( converterType, jaxbConverter.isAutoApply() ) );
 			} );
 		}
