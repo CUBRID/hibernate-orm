@@ -1,5 +1,6 @@
 package org.hibernate.orm.test.tenantid;
 
+import org.hibernate.CacheMode;
 import org.hibernate.PropertyValueException;
 import org.hibernate.Session;
 import org.hibernate.StatelessSession;
@@ -30,6 +31,8 @@ import org.hibernate.testing.orm.junit.SkipForDialect;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
@@ -122,6 +125,52 @@ public class TenantIdTest implements SessionFactoryProducer {
 		} );
 	}
 
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	@JiraKey("HHH-16561")
+	public void testTenantRestrictionOnMultiLoad(boolean ordered, SessionFactoryScope scope) {
+		final Client myClient = new Client( "mine" );
+		final Account myAccount = new Account( myClient );
+		currentTenant = "mine";
+		scope.inTransaction( session -> {
+			session.persist( myClient );
+			session.persist( myAccount );
+		} );
+
+		final Client yourClient = new Client( "yours" );
+		final Account yourAccount = new Account( yourClient );
+		currentTenant = "yours";
+		scope.inTransaction( session -> {
+			session.persist( yourClient );
+			session.persist( yourAccount );
+		} );
+
+		for ( String tenant : List.of( "mine", "yours" ) ) {
+			currentTenant = tenant;
+			// Each load uses a fresh session so the tenant restriction is tested at the database.
+			scope.inTransaction( session -> {
+				final List<Account> accounts = session.byMultipleIds( Account.class )
+						.with( CacheMode.IGNORE )
+						.withReadOnly( true )
+						.enableOrderedReturn( ordered )
+						.multiLoad( myAccount.id, yourAccount.id );
+				final Long expectedId = tenant.equals( "mine" ) ? myAccount.id : yourAccount.id;
+				if ( ordered ) {
+					assertEquals( 2, accounts.size() );
+					final int visibleIndex = tenant.equals( "mine" ) ? 0 : 1;
+					assertNull( accounts.get( 1 - visibleIndex ) );
+					assertEquals( expectedId, accounts.get( visibleIndex ).id );
+					assertEquals( tenant, accounts.get( visibleIndex ).tenantId );
+				}
+				else {
+					assertEquals( 1, accounts.size() );
+					assertEquals( expectedId, accounts.get( 0 ).id );
+					assertEquals( tenant, accounts.get( 0 ).tenantId );
+				}
+			} );
+		}
+	}
+
 	@Test
 	public void testRoot(SessionFactoryScope scope) {
 		currentTenant = "root";
@@ -160,6 +209,44 @@ public class TenantIdTest implements SessionFactoryProducer {
 		scope.inTransaction( session -> {
 			assertNotNull( session.find( Account.class, rootAcc.id ) );
 			assertEquals( 2, session.createQuery( "from Account", Account.class ).getResultList().size() );
+		} );
+	}
+
+	@Test
+	@JiraKey("HHH-16470")
+	public void testTenantRestrictionOnUnrelatedLeftJoin(SessionFactoryScope scope) {
+		currentTenant = "mine";
+		final Client matchingClient = new Client( "shared" );
+		final Client unmatchedClient = new Client( "unmatched" );
+		final Account matchingAccount = new Account( matchingClient );
+		final Account unmatchedAccount = new Account( unmatchedClient );
+		scope.inTransaction( session -> {
+			session.persist( matchingClient );
+			session.persist( unmatchedClient );
+			session.persist( matchingAccount );
+			session.persist( unmatchedAccount );
+		} );
+
+		currentTenant = "yours";
+		scope.inTransaction( session -> {
+			final Client otherTenantClient = new Client( "shared" );
+			session.persist( otherTenantClient );
+			session.persist( new Account( otherTenantClient ) );
+		} );
+
+		currentTenant = "mine";
+		scope.inTransaction( session -> {
+			final var results = session.createQuery(
+					"select a.id, c.id from Account a left join Client c "
+							+ "on c.name = a.client.name and c.name = :name order by a.id",
+					jakarta.persistence.Tuple.class
+			).setParameter( "name", "shared" ).getResultList();
+
+			assertThat( results ).hasSize( 2 );
+			assertThat( results.get( 0 ).get( 0 ) ).isEqualTo( matchingAccount.id );
+			assertThat( results.get( 0 ).get( 1 ) ).isEqualTo( matchingClient.id );
+			assertThat( results.get( 1 ).get( 0 ) ).isEqualTo( unmatchedAccount.id );
+			assertThat( results.get( 1 ).get( 1 ) ).isNull();
 		} );
 	}
 
