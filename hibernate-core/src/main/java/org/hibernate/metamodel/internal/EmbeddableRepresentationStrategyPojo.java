@@ -1,5 +1,7 @@
 package org.hibernate.metamodel.internal;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Locale;
@@ -11,6 +13,9 @@ import jakarta.annotation.Nullable;
 import org.hibernate.HibernateException;
 import org.hibernate.boot.registry.selector.spi.StrategySelector;
 import org.hibernate.bytecode.spi.ProxyFactoryFactory;
+import org.hibernate.MappingException;
+import org.hibernate.cfg.CheckHandling;
+import org.hibernate.cfg.MappingSettings;
 import org.hibernate.mapping.Component;
 import org.hibernate.mapping.Property;
 import org.hibernate.metamodel.RepresentationMode;
@@ -23,10 +28,13 @@ import org.hibernate.accessor.MultiValueReader;
 import org.hibernate.accessor.MultiValueWriter;
 import org.hibernate.property.access.spi.PropertyAccess;
 import org.hibernate.property.access.spi.PropertyAccessorService;
+import org.hibernate.property.access.spi.SetterFieldImpl;
 import org.hibernate.type.descriptor.java.JavaType;
 import org.hibernate.type.internal.CompositeUserTypeJavaTypeWrapper;
 import org.hibernate.usertype.CompositeUserType;
 
+import static java.lang.reflect.Modifier.isFinal;
+import static org.hibernate.internal.CoreMessageLogger.CORE_LOGGER;
 import static org.hibernate.internal.util.NullnessUtil.castNonNull;
 import static org.hibernate.internal.util.ReflectHelper.isAbstractClass;
 import static org.hibernate.metamodel.internal.PropertyAccessHelper.propertyAccessStrategy;
@@ -64,6 +72,7 @@ public class EmbeddableRepresentationStrategyPojo implements EmbeddableRepresent
 		// We need access to the Class objects, used only during initialization
 		final var subclassesByName = getSubclassesByName( bootDescriptor, creationContext );
 		boolean foundCustomAccessor = false;
+		var finalFields = new ArrayList<String>();
 		for ( int i = 0; i < bootDescriptor.getProperties().size(); i++ ) {
 			final var property = bootDescriptor.getProperty( i );
 			final var embeddableClass = getEmbeddableClass( bootDescriptor, subclassesByName, property );
@@ -80,7 +89,14 @@ public class EmbeddableRepresentationStrategyPojo implements EmbeddableRepresent
 			if ( !property.isBasicPropertyAccessor() ) {
 				foundCustomAccessor = true;
 			}
+			if ( propertyAccesses[i].getSetter() instanceof SetterFieldImpl setter
+					&& isFinal( setter.getField().getModifiers() ) ) {
+				finalFields.add( property.getName() );
+			}
 		}
+
+		warnOnFinalFields( bootDescriptor, finalFields, customInstantiator,
+				creationContext.getSessionFactoryOptions().getFinalPersistentFieldsHandling() );
 
 		if ( canBuildMultiValueAccessors( bootDescriptor, foundCustomAccessor ) ) {
 			final var multiValueAccessors = PropertyAccessHelper.buildMultiValueAccessors(
@@ -214,6 +230,29 @@ public class EmbeddableRepresentationStrategyPojo implements EmbeddableRepresent
 				&& bootDescriptor.getCustomInstantiator() == null
 				&& bootDescriptor.getInstantiator() == null
 				&& !bootDescriptor.isPolymorphic();
+	}
+
+	private static void warnOnFinalFields(
+			Component bootDescriptor,
+			List<String> finalFields,
+			EmbeddableInstantiator customInstantiator,
+			CheckHandling handling) {
+		if ( customInstantiator != null && !( customInstantiator instanceof StandardEmbeddableInstantiator ) ) {
+			return;
+		}
+		if ( handling == CheckHandling.IGNORE || finalFields.isEmpty() ) {
+			return;
+		}
+		if ( handling == CheckHandling.ERROR ) {
+			throw new MappingException( String.format(
+					"Persistent fields %s in embeddable class '%s' are declared 'final'",
+					finalFields, bootDescriptor.getComponentClassName()
+			) );
+		}
+		CORE_LOGGER.finalPersistentFields(
+				finalFields, "embeddable", bootDescriptor.getComponentClassName(),
+				MappingSettings.FINAL_PERSISTENT_FIELDS
+		);
 	}
 
 	private static Map<String, Class<?>> getSubclassesByName(

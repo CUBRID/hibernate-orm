@@ -4,7 +4,7 @@ plugins {
     id "local.publishing"
 }
 
-description = 'Platform (BOM) for Hibernate ORM dependencies'
+description = 'Bill of Materials (BOM) for Hibernate ORM published artifacts'
 
 dependencies {
     constraints {
@@ -27,7 +27,7 @@ dependencies {
         api project( ":hibernate-jcache" )
 
         api project( ":hibernate-micrometer" )
-        api project( ":hibernate-graalvm")
+        api project( ":hibernate-graalvm" )
 
         api project( ":hibernate-processor" )
         api project( ":hibernate-gradle-plugin" )
@@ -39,46 +39,40 @@ dependencies {
         api project( ":hibernate-reveng" )
 
         // Not all JDK implementations support JFR, so we cannot rely on a project() reference here.
-        // But the coordinate should always generate into the BOM.
+        // The coordinate should always be part of the BOM regardless.
         api "org.hibernate.orm:hibernate-jfr:$version"
-
-        api libs.hibernateModels
-        api libs.hibernateAccessor
-
-        api libs.jakarta.jpa
-        api libs.jakarta.jta
-        api libs.jakarta.data
-
-        runtime libs.antlrRuntime
-        runtime libs.logging
-        runtime libs.byteBuddy
-        runtime libs.byteBuddyAgent
-        runtime libs.jandex
-
-        runtime libs.hibernateAccessorAsm
-        runtime libs.hibernateAccessorByteBuddy
-
-        runtime libs.jakarta.jaxb
-        runtime libs.jakarta.jaxbApi
-        runtime libs.jakarta.inject
-
-
-        api libs.agroal
-        api libs.agroalPool
-        api libs.c3p0
-        api libs.hikaricp
-
-        api libs.jcache
-
-        api libs.micrometer
     }
 }
 
+
+tasks.register("verifySkinnyBom") {
+    group = "verification"
+    description = "Verify that the BOM only constrains org.hibernate.orm artifacts"
+
+    doLast {
+        var violations = []
+        ['api', 'runtime'].each { confName ->
+            configurations.getByName( confName ).dependencyConstraints.each { constraint ->
+                if ( constraint.group != 'org.hibernate.orm' ) {
+                    violations.add( "${constraint.group}:${constraint.name}" )
+                }
+            }
+        }
+        if ( !violations.isEmpty() ) {
+            throw new GradleException(
+                    "hibernate-bom must only contain org.hibernate.orm artifacts, " +
+                            "but found: ${violations.join( ', ' )}"
+            )
+        }
+    }
+}
+tasks.check.dependsOn( 'verifySkinnyBom' )
 
 tasks.register("releasePrepare") {
     group = "release-prepare"
     description = "See :release:releasePrepare for details."
 
+    dependsOn tasks.check
     dependsOn tasks.generateMetadataFileForPublishedArtifactsPublication
     dependsOn tasks.generatePomFileForPublishedArtifactsPublication
     dependsOn tasks.publishAllPublicationsToStagingRepository

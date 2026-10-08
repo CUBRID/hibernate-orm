@@ -15,6 +15,8 @@ import org.hibernate.HibernateException;
 import org.hibernate.MappingException;
 import org.hibernate.boot.registry.selector.spi.StrategySelector;
 import org.hibernate.bytecode.spi.BytecodeProvider;
+import org.hibernate.cfg.CheckHandling;
+import org.hibernate.cfg.MappingSettings;
 import org.hibernate.mapping.Component;
 import org.hibernate.mapping.PersistentClass;
 import org.hibernate.mapping.Property;
@@ -28,6 +30,7 @@ import org.hibernate.accessor.MultiValueWriter;
 import org.hibernate.persister.entity.EntityPersister;
 import org.hibernate.property.access.spi.PropertyAccess;
 import org.hibernate.property.access.spi.PropertyAccessorService;
+import org.hibernate.property.access.spi.SetterFieldImpl;
 import org.hibernate.proxy.HibernateProxy;
 import org.hibernate.proxy.ProxyFactory;
 import org.hibernate.type.CompositeType;
@@ -124,7 +127,10 @@ public class EntityRepresentationStrategyPojoStandard implements EntityRepresent
 				creationContext
 		);
 
-		propertyAccessMap = buildPropertyAccessMap( propertyAccessorService, bootDescriptor, strategySelector );
+		propertyAccessMap = buildPropertyAccessMap(
+				propertyAccessorService, bootDescriptor, strategySelector,
+				creationContext.getSessionFactoryOptions().getFinalPersistentFieldsHandling()
+		);
 		final List<Property> propertyClosure = bootDescriptor.getPropertyClosure();
 		final var multiValuePropertyAccesses = new ArrayList<PropertyAccess>( propertyClosure.size() );
 		for ( Property property : propertyClosure ) {
@@ -178,12 +184,44 @@ public class EntityRepresentationStrategyPojoStandard implements EntityRepresent
 		}
 	}
 
-	private Map<String, PropertyAccess> buildPropertyAccessMap(PropertyAccessorService propertyAccessorService, PersistentClass bootDescriptor, StrategySelector strategySelector) {
+	private Map<String, PropertyAccess> buildPropertyAccessMap(
+			PropertyAccessorService propertyAccessorService,
+			PersistentClass bootDescriptor,
+			StrategySelector strategySelector,
+			CheckHandling finalFieldsHandling) {
 		final Map<String, PropertyAccess> propertyAccessMap = new LinkedHashMap<>();
+		var finalFields = new ArrayList<String>();
 		for ( var property : bootDescriptor.getAllPropertyClosure() ) {
-			propertyAccessMap.put( property.getName(), makePropertyAccess( propertyAccessorService, property, strategySelector ) );
+			var propertyAccess = makePropertyAccess( propertyAccessorService, property, strategySelector );
+			propertyAccessMap.put( property.getName(), propertyAccess );
+			if ( propertyAccess.getSetter() instanceof SetterFieldImpl setter
+					&& isFinal( setter.getField().getModifiers() ) ) {
+				finalFields.add( property.getName() );
+			}
 		}
+		if ( identifierPropertyAccess != null
+				&& identifierPropertyAccess.getSetter() instanceof SetterFieldImpl setter
+				&& isFinal( setter.getField().getModifiers() ) ) {
+			finalFields.add( setter.getPropertyName() );
+		}
+		warnOnFinalFields( finalFields, finalFieldsHandling );
 		return propertyAccessMap;
+	}
+
+	private void warnOnFinalFields(List<String> finalFields, CheckHandling handling) {
+		if ( handling == CheckHandling.IGNORE || finalFields.isEmpty() ) {
+			return;
+		}
+		if ( handling == CheckHandling.ERROR ) {
+			throw new MappingException( String.format(
+					"Persistent fields %s in entity class '%s' are declared 'final'",
+					finalFields, mappedJtd.getTypeName()
+			) );
+		}
+		CORE_LOGGER.finalPersistentFields(
+				finalFields, "entity", mappedJtd.getTypeName(),
+				MappingSettings.FINAL_PERSISTENT_FIELDS
+		);
 	}
 
 	/*
@@ -408,6 +446,7 @@ public class EntityRepresentationStrategyPojoStandard implements EntityRepresent
 			}
 		}
 	}
+
 
 	private static void validateGetterSetterMethodProxyability(String getterOrSetter, Method method ) {
 		if ( method != null && isFinal( method.getModifiers() ) ) {
