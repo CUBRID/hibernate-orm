@@ -58,6 +58,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletionStage;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
@@ -80,6 +81,7 @@ import static org.hibernate.models.internal.util.StringHelper.isEmpty;
 public abstract class QueryBinder {
 	private static final String JAKARTA_DATA_REPOSITORY = "jakarta.data.repository.Repository";
 	private static final String JAKARTA_DATA_QUERY = "jakarta.data.repository.Query";
+	private static final String MUTINY_UNI = "io.smallrye.mutiny.Uni";
 	private static final String JAKARTA_DATA_PAGE = "jakarta.data.page.Page";
 	private static final String JAKARTA_DATA_CURSORED_PAGE = "jakarta.data.page.CursoredPage";
 
@@ -338,7 +340,7 @@ public abstract class QueryBinder {
 				context.getMetadataCollector().addNamedQuery( definition );
 			}
 			else {
-				final var resultType = staticSelectionResultType( classDetails, methodDetails );
+				final var resultType = staticSelectionResultType( classDetails, methodDetails, modelsContext );
 				final var definition = new NamedHqlSelectionDefinitionImpl<>(
 						registrationName,
 						staticQueryLocation( classDetails, methodDetails ),
@@ -529,7 +531,7 @@ public abstract class QueryBinder {
 						registrationName,
 						staticQueryLocation( classDetails, methodDetails ),
 						query.value(),
-						staticSelectionResultType( classDetails, methodDetails ),
+						staticSelectionResultType( classDetails, methodDetails, modelsContext ),
 						bindStaticNativeQueryResultSetMapping( registrationName, methodDetails, context, modelsContext ),
 						queryFlushMode( options ),
 						timeout( options ),
@@ -585,8 +587,14 @@ public abstract class QueryBinder {
 		return annotations == null ? (A[]) EMPTY_OBJECT_ARRAY : annotations;
 	}
 
-	private static Class<?> staticSelectionResultType(ClassDetails classDetails, MethodDetails methodDetails) {
+	private static Class<?> staticSelectionResultType(
+			ClassDetails classDetails,
+			MethodDetails methodDetails,
+			ModelsContext modelsContext) {
 		final var returnType = methodDetails.getReturnType();
+		if ( isReactiveType( returnType ) || isAsynchronousType( returnType ) ) {
+			return wrappedSelectionResultType( classDetails, methodDetails, modelsContext );
+		}
 		final var returnClass = returnType.toJavaClass();
 		if ( returnClass.isArray() ) {
 			return staticArraySelectionResultType( classDetails, methodDetails, returnClass );
@@ -599,17 +607,73 @@ public abstract class QueryBinder {
 		}
 	}
 
+	/**
+	 * The result type of a static query method which returns Mutiny's {@code Uni}
+	 * (a reactive repository) or a {@code CompletionStage} (an asynchronous repository).
+	 * The wrapper has no bearing on the type of result returned by the query.
+	 * <p>
+	 * Hibernate Reactive supports only a result, a {@code List}, a {@code KeyedResultList},
+	 * a {@code Page}, or a {@code CursoredPage} in a {@code Uni}, while the result of an
+	 * asynchronous method may be anything that a method of a blocking repository can return.
+	 */
+	private static Class<?> wrappedSelectionResultType(
+			ClassDetails classDetails,
+			MethodDetails methodDetails,
+			ModelsContext modelsContext) {
+		final boolean reactive = isReactiveType( methodDetails.getReturnType() );
+		final var wrappedType = firstTypeArgument( classDetails, methodDetails );
+		final var wrappedClass = erasedClass( wrappedType );
+		if ( wrappedClass.isArray() ) {
+			return staticArraySelectionResultType( wrappedType, wrappedClass );
+		}
+		final var wrappedDetails =
+				modelsContext.getClassDetailsRegistry().resolveClassDetails( wrappedClass.getName() );
+		if ( reactive ? isReactiveQueryContainerType( wrappedDetails ) : isStaticQueryContainerType( wrappedDetails ) ) {
+			return erasedClass( firstTypeArgument( wrappedType ) );
+		}
+		else if ( reactive && isStaticQueryContainerType( wrappedDetails ) ) {
+			throw new AnnotationException( "Static query method '" + methodDetails.getName() + "' of '"
+					+ classDetails.getName() + "' returns '" + wrappedClass.getSimpleName() + "' wrapped in 'Uni'"
+					+ " (a reactive query method may only return a result, a 'List', a 'KeyedResultList',"
+					+ " a 'Page', or a 'CursoredPage')" );
+		}
+		else {
+			return boxedType( wrappedClass );
+		}
+	}
+
+	/**
+	 * Is this Mutiny's {@code Uni}? Mutiny is not a dependency of Hibernate ORM,
+	 * so it is recognized by name.
+	 */
+	private static boolean isReactiveType(ClassDetails returnType) {
+		return MUTINY_UNI.equals( returnType.getName() );
+	}
+
+	private static boolean isAsynchronousType(ClassDetails returnType) {
+		return CompletionStage.class.getName().equals( returnType.getName() );
+	}
+
+	private static boolean isReactiveQueryContainerType(ClassDetails returnType) {
+		return returnType.isImplementor( List.class )
+			|| returnType.isImplementor( org.hibernate.query.KeyedResultList.class )
+			|| isJakartaDataQueryContainerType( returnType.getName() );
+	}
+
 	private static Class<?> staticArraySelectionResultType(
 			ClassDetails classDetails,
 			MethodDetails methodDetails,
 			Class<?> returnClass) {
+		return staticArraySelectionResultType( genericReturnType( classDetails, methodDetails ), returnClass );
+	}
+
+	private static Class<?> staticArraySelectionResultType(Type genericType, Class<?> returnClass) {
 		final var componentType = returnClass.getComponentType();
 		if ( componentType != Object.class ) {
 			return boxedType( componentType );
 		}
 		else {
-			return genericReturnType( classDetails, methodDetails )
-						instanceof GenericArrayType genericArrayType
+			return genericType instanceof GenericArrayType genericArrayType
 					? boxedType( erasedClass( genericArrayType.getGenericComponentType() ) )
 					: returnClass;
 		}
@@ -633,8 +697,11 @@ public abstract class QueryBinder {
 	}
 
 	private static Type firstTypeArgument(ClassDetails classDetails, MethodDetails methodDetails) {
-		if ( genericReturnType( classDetails, methodDetails )
-				instanceof ParameterizedType parameterizedType ) {
+		return firstTypeArgument( genericReturnType( classDetails, methodDetails ) );
+	}
+
+	private static Type firstTypeArgument(Type type) {
+		if ( type instanceof ParameterizedType parameterizedType ) {
 			var actualTypeArguments = parameterizedType.getActualTypeArguments();
 			if ( actualTypeArguments.length == 1 ) {
 				return actualTypeArguments[0];

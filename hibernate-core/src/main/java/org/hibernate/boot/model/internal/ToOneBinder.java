@@ -4,6 +4,7 @@ import java.util.EnumSet;
 
 import org.hibernate.AnnotationException;
 import org.hibernate.AssertionFailure;
+import org.hibernate.MappingException;
 import org.hibernate.annotations.Fetch;
 import org.hibernate.annotations.FetchMode;
 import org.hibernate.annotations.FetchProfileOverride;
@@ -15,6 +16,7 @@ import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 import org.hibernate.annotations.SQLRestriction;
 import org.hibernate.boot.models.JpaAnnotations;
+import org.hibernate.boot.models.annotations.internal.LegacyOneToOneXmlAnnotation;
 import org.hibernate.boot.spi.MetadataBuildingContext;
 import org.hibernate.boot.spi.PropertyData;
 import org.hibernate.boot.spi.SecondPass;
@@ -476,6 +478,42 @@ public class ToOneBinder {
 			);
 		}
 
+		final boolean inferReadOnly = !joinColumns.hasMappedBy()
+				&& joinColumns.getJoinColumns().stream().anyMatch( AnnotatedJoinColumn::isFormula )
+				&& !isIdentifier( propertyHolder, propertyBinder, isIdentifierMapper )
+				&& !memberDetails.hasDirectAnnotationUsage( MapsId.class )
+				&& propertyHolder.getJoinTable( memberDetails ) == null
+				&& !(oneToOne instanceof LegacyOneToOneXmlAnnotation);
+		if ( inferReadOnly ) {
+			if ( !inSecondPass ) {
+				// Identifier components, inherited keys, and implicit source names must be resolved first.
+				context.getMetadataCollector().addSecondPass( persistentClasses -> {
+					try {
+						bindOneToOne( propertyHolder, nullability, inferredData, isIdentifierMapper, true,
+								context, joinColumns, propertyBinder );
+					}
+					catch (MappingException exception) {
+						final String path = getPath( propertyHolder, inferredData );
+						if ( exception.getMessage() != null && exception.getMessage().contains( path ) ) {
+							throw exception;
+						}
+						throw new AnnotationException( "Could not map association '" + path + "': "
+								+ exception.getMessage(), exception );
+					}
+				}, true );
+				return;
+			}
+			final var targetType = getTargetEntity( inferredData, context );
+			FormulaOneToOneHelper.inferReadOnlyColumns(
+					joinColumns,
+					propertyHolder.getPersistentClass(),
+					context.getMetadataCollector().getEntityBinding(
+							getReferenceEntityName( inferredData, targetType ) ),
+					getPath( propertyHolder, inferredData ),
+					context
+			);
+		}
+
 		//FIXME support a proper PKJCs
 		final boolean trueOneToOne = memberDetails.hasDirectAnnotationUsage( PrimaryKeyJoinColumn.class )
 				|| memberDetails.hasDirectAnnotationUsage( PrimaryKeyJoinColumns.class );
@@ -513,7 +551,10 @@ public class ToOneBinder {
 			PropertyBinder propertyBinder,
 			MetadataBuildingContext context) {
 		//column.getTable() => persistentClass.getTable()
-		if ( mappedBy != null || isMappedToPrimaryKey( joinColumns, propertyHolder, trueOneToOne ) ) {
+		final boolean formulaOneToOne = mappedBy == null
+				&& !inferredData.getAttributeMember().hasDirectAnnotationUsage( NotFound.class )
+				&& isFormulaOneToOne( joinColumns );
+		if ( mappedBy != null || formulaOneToOne || isMappedToPrimaryKey( joinColumns, propertyHolder, trueOneToOne ) ) {
 			bindTrueOneToOne(
 					cascadeStrategy,
 					joinColumns,
@@ -523,6 +564,7 @@ public class ToOneBinder {
 					inferredData,
 					mappedBy,
 					orphanRemoval,
+					formulaOneToOne,
 					inSecondPass,
 					context
 			);
@@ -556,6 +598,7 @@ public class ToOneBinder {
 			PropertyData inferredData,
 			String mappedBy,
 			boolean orphanRemoval,
+			boolean formulaBased,
 			boolean inSecondPass,
 			MetadataBuildingContext context) {
 		//is a true one-to-one
@@ -577,8 +620,11 @@ public class ToOneBinder {
 		oneToOne.setOnDeleteAction( onDeleteAction( memberDetails ) );
 		//value.setLazy( fetchMode != FetchMode.JOIN );
 
-		oneToOne.setConstrained( !optional );
-		oneToOne.setForeignKeyType( mappedBy == null ? FROM_PARENT : TO_PARENT );
+		final boolean constrained = !optional;
+		oneToOne.setConstrained( constrained );
+		oneToOne.setForeignKeyType( formulaBased
+				? ( constrained ? FROM_PARENT : TO_PARENT )
+				: ( mappedBy == null ? FROM_PARENT : TO_PARENT ) );
 		bindForeignKeyNameAndDefinition( oneToOne, memberDetails,
 				memberDetails.getDirectAnnotationUsage( ForeignKey.class ),
 				context );
@@ -658,6 +704,23 @@ public class ToOneBinder {
 				BinderHelper.toAliasTableMap( filter.aliases() ), BinderHelper.toAliasEntityMap( filter.aliases() ) );
 	}
 
+	/**
+	 * Determines whether a one-to-one join contains one or more SQL formulas
+	 * (via {@code @JoinFormula}/{@code @JoinColumnOrFormula}, or the equivalent
+	 * {@code <join-formula>} XML) and no writable physical join columns. Both formula-only
+	 * joins and formulas combined with read-only columns are candidates for binding as an
+	 * explicit-selectable {@link org.hibernate.mapping.OneToOne}. Associations with
+	 * explicit {@code @NotFound} handling or non-primary-key references retain their
+	 * logical many-to-one binding, as do mixed joins containing an insertable or updatable
+	 * physical column.
+	 */
+	static boolean isFormulaOneToOne(AnnotatedJoinColumns joinColumns) {
+		final var columns = joinColumns.getJoinColumns();
+		return columns.stream().anyMatch( AnnotatedJoinColumn::isFormula )
+				&& columns.stream().allMatch( column -> column.isFormula()
+						|| !column.isInsertable() && !column.isUpdatable() );
+	}
+
 	private static boolean isMappedToPrimaryKey(
 			AnnotatedJoinColumns joinColumns,
 			PropertyHolder propertyHolder,
@@ -682,9 +745,11 @@ public class ToOneBinder {
 				else {
 					final var identifierColumns = identifier.getColumns();
 					return columns.stream().noneMatch( column -> {
-						final String name = column.getMappingColumn().getName();
-						return identifierColumns.stream()
-								.noneMatch( idColumn -> idColumn.getName().equals( name ) );
+						// a formula-based join selectable is never a physical identifier column
+						final var mappingColumn = column.getMappingColumn();
+						return mappingColumn == null
+								|| identifierColumns.stream()
+										.noneMatch( idColumn -> idColumn.getName().equals( mappingColumn.getName() ) );
 					} );
 				}
 			}

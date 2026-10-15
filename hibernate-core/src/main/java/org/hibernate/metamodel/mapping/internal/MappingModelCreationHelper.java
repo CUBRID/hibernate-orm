@@ -994,7 +994,10 @@ public class MappingModelCreationHelper {
 					bootValueMapping.isConstrained(),
 					swapDirection
 			);
-			attributeMapping.setForeignKeyDescriptor( foreignKeyDescriptor );
+			attributeMapping.setForeignKeyDescriptor(
+					foreignKeyDescriptor,
+					swapDirection ? ForeignKeyDescriptor.Nature.TARGET : ForeignKeyDescriptor.Nature.KEY
+			);
 			attributeMapping.setupCircularFetchModelPart( creationProcess );
 //			creationProcess.registerForeignKey( attributeMapping, foreignKeyDescriptor );
 		}
@@ -1012,7 +1015,10 @@ public class MappingModelCreationHelper {
 					value.getColumnUpdateability(),
 					creationProcess
 			);
-			attributeMapping.setForeignKeyDescriptor( embeddedForeignKeyDescriptor );
+			attributeMapping.setForeignKeyDescriptor(
+					embeddedForeignKeyDescriptor,
+					swapDirection ? ForeignKeyDescriptor.Nature.TARGET : ForeignKeyDescriptor.Nature.KEY
+			);
 			attributeMapping.setupCircularFetchModelPart( creationProcess );
 //			creationProcess.registerForeignKey( attributeMapping, embeddedForeignKeyDescriptor );
 		}
@@ -1250,7 +1256,7 @@ public class MappingModelCreationHelper {
 			EntityPersister referencedEntityDescriptor,
 			String referencedPropertyName,
 			MappingModelCreationProcess creationProcess) {
-		final var foreignKeyDescriptor =
+		var foreignKeyDescriptor =
 				foreignKeyDescriptor(
 						referencedAttributeMapping,
 						referencedEntityDescriptor,
@@ -1258,16 +1264,26 @@ public class MappingModelCreationHelper {
 						creationProcess
 				);
 
-		final var declaringEntityMapping = attributeMapping.findContainingEntityMapping();
+		final var declaringEntityMapping = castNonNull( attributeMapping.findContainingEntityMapping() );
 		final var targetPart = foreignKeyDescriptor.getTargetPart();
-		if ( targetPart instanceof EntityIdentifierMapping
-				&& targetPart != castNonNull( declaringEntityMapping ).getIdentifierMapping() ) {
+		final var targetEntityMapping = targetPart.findContainingEntityMapping();
+		if ( referencedAttributeMapping.getSideNature() == ForeignKeyDescriptor.Nature.KEY
+				&& targetPart instanceof EntityIdentifierMapping
+				&& targetPart != declaringEntityMapping.getIdentifierMapping()
+				&& targetEntityMapping != null
+				&& targetEntityMapping.getRootEntityDescriptor() == declaringEntityMapping.getRootEntityDescriptor() ) {
 			// If the many-to-one refers to the super type, but the one-to-many is defined in a subtype,
 			// it would be wasteful to reuse the FK descriptor of the many-to-one,
 			// because that refers to the PK column in the root table.
-			// Joining such an association then requires that we join the root table
-			attributeMapping.setForeignKeyDescriptor(
-					foreignKeyDescriptor.withTargetPart( castNonNull( declaringEntityMapping ).getIdentifierMapping() )
+			// Joining such an association then requires that we join the root table.
+			// A reversed descriptor's target contains the association selectables, not the
+			// referenced entity's primary key, even for an association within the same hierarchy.
+			foreignKeyDescriptor = foreignKeyDescriptor.withTargetPart( declaringEntityMapping.getIdentifierMapping() );
+		}
+		if ( attributeMapping instanceof ToOneAttributeMapping toOneAttributeMapping ) {
+			toOneAttributeMapping.setForeignKeyDescriptor(
+					foreignKeyDescriptor,
+					referencedAttributeMapping.getSideNature().inverse()
 			);
 		}
 		else {
