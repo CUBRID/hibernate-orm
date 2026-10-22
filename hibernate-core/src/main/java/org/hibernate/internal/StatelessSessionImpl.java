@@ -1,5 +1,6 @@
 package org.hibernate.internal;
 
+import static org.hibernate.metamodel.mapping.internal.CollectionValueWalker.visitCollectionValues;
 import static org.hibernate.engine.internal.TenantIdHelper.MissingRowPolicy.ALLOW;
 
 import static org.hibernate.engine.internal.TenantIdHelper.MissingRowPolicy.THROW;
@@ -30,6 +31,7 @@ import org.hibernate.TransientObjectException;
 import org.hibernate.TypeMismatchException;
 import org.hibernate.UnresolvableObjectException;
 import org.hibernate.bytecode.enhance.spi.interceptor.EnhancementAsProxyLazinessInterceptor;
+import org.hibernate.collection.internal.StandardArraySemantics;
 import org.hibernate.collection.spi.CollectionSemantics;
 import org.hibernate.collection.spi.PersistentCollection;
 import org.hibernate.engine.creation.internal.SharedSessionCreationOptions;
@@ -519,12 +521,16 @@ public class StatelessSessionImpl
 			final String entityName = persister.getEntityName();
 			final var eventMonitor = getEventMonitor();
 			final var statistics = getStatistics();
-			forEachOwnedCollection( entity, id, persister,
+			forEachOwnedCollection(
+					entity,
+					id,
+					persister,
 					(descriptor, collection) -> {
 						final String role = descriptor.getRole();
 						firePreRecreate( descriptor, collection, id, entityName, entity );
 						final var event = eventMonitor.beginCollectionRecreateEvent();
 						boolean success = false;
+
 						try {
 							descriptor.recreate( collection, id, this );
 							success = true;
@@ -532,11 +538,14 @@ public class StatelessSessionImpl
 						finally {
 							eventMonitor.completeCollectionRecreateEvent( event, id, role, success, this );
 						}
+
 						if ( statistics.isStatisticsEnabled() ) {
 							statistics.recreateCollection( role );
 						}
+
 						firePostRecreate( descriptor, collection, id, entityName, entity );
-					} );
+					}
+			);
 		}
 	}
 
@@ -1153,34 +1162,41 @@ public class StatelessSessionImpl
 	protected void forEachOwnedCollection(
 			Object entity, Object key,
 			EntityPersister persister, BiConsumer<CollectionPersister, PersistentCollection<?>> action) {
-		persister.visitAttributeMappings( attribute -> {
-			if ( attribute.isPluralAttributeMapping() ) {
-				final var descriptor = attribute.asPluralAttributeMapping().getCollectionDescriptor();
-				final Object cacheKey = lockCacheItem( key, descriptor );
-				if ( !descriptor.isInverse() ) {
-					final Object value = attribute.getPropertyAccess().getPropertyValueAccessor().get(entity);
-					final PersistentCollection<?> collection;
-					if ( value instanceof PersistentCollection<?> persistentCollection ) {
-						if ( !persistentCollection.wasInitialized() ) {
-							return;
-						}
-						collection = persistentCollection;
+		visitCollectionValues( persister, entity, (attribute, value) -> {
+			final var descriptor = attribute.getCollectionDescriptor();
+			final Object cacheKey = lockCacheItem( key, descriptor );
+			if ( !descriptor.isInverse() ) {
+				final PersistentCollection<?> collection;
+				if ( value instanceof PersistentCollection<?> persistentCollection ) {
+					if ( !persistentCollection.wasInitialized() ) {
+						return;
 					}
-					else {
-						collection = wrapOrInstantiateCollection( entity, key, value, descriptor );
-					}
-					action.accept( descriptor, collection );
+					collection = persistentCollection;
 				}
-				removeCacheItem( cacheKey, descriptor );
+				else {
+					collection = wrapOrInstantiateCollection( entity, key, value, descriptor );
+				}
+				action.accept( descriptor, collection );
 			}
+			removeCacheItem( cacheKey, descriptor );
 		} );
 	}
 
 	private PersistentCollection<?> wrapOrInstantiateCollection(
 			Object entity, Object key, Object value, CollectionPersister descriptor) {
-		return value == null
-				? instantiateEmpty( key, descriptor )
-				: wrap( descriptor, value, entity );
+		if ( value == null ) {
+			if ( descriptor.isArray() ) {
+				// Initializing an empty array holder writes through the owner's property accessor.
+				// Wrap an empty array instead, without changing the entity or its component.
+				return wrap( descriptor,
+						StandardArraySemantics.INSTANCE.instantiateWithElements( 0, descriptor, List.of() ), entity );
+			}
+			final var collection = instantiateEmpty( key, descriptor );
+			collection.initializeEmptyCollection( descriptor );
+			collection.setOwner( entity );
+			return collection;
+		}
+		return wrap( descriptor, value, entity );
 	}
 
 	// Hibernate Reactive calls this
