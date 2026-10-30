@@ -3,10 +3,9 @@ name: CUBRID CI
 # Hibernate's own CI does not run community dialects, so this fork runs the
 # full suite against every CUBRID version we support.
 #
-# The scheduled run tests `ref` with main merged into it, which is how we notice
-# an upstream change that breaks CUBRID before it reaches a release. Until the
-# dialect work is merged upstream, `ref` is the branch that carries it; once it
-# is merged, point `ref` at main and drop the merge step.
+# The scheduled run tests main, which "Sync upstream" keeps level with
+# hibernate/main, so an upstream change that breaks CUBRID shows up here before
+# it reaches a release.
 
 on:
   workflow_dispatch:
@@ -14,7 +13,7 @@ on:
       ref:
         description: 'Branch to test'
         required: false
-        default: 'cubrid-daily'
+        default: 'main'
       gradle-args:
         description: 'Gradle tasks and filters to run against CUBRID'
         required: false
@@ -46,24 +45,8 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           # `inputs` is empty on a scheduled run, so repeat the dispatch default
-          ref: ${{ inputs.ref || 'cubrid-daily' }}
-          # full history, otherwise the merge below has no common ancestor
-          fetch-depth: 0
+          ref: ${{ inputs.ref || 'main' }}
           persist-credentials: false
-      - name: Merge main
-        # A conflict means an upstream change collides with ours: warn and test the
-        # branch alone, so the day still gets results. Nothing is pushed.
-        run: |
-          git fetch --no-tags origin main
-          if ! git -c user.name=github-actions[bot] \
-                  -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
-                  merge --no-edit FETCH_HEAD; then
-            git merge --abort
-            echo "::warning::main does not merge cleanly into $REF, so this run tests $REF alone"
-            echo "main does not merge cleanly into \`$REF\`, so this run tests \`$REF\` alone." >> "$GITHUB_STEP_SUMMARY"
-          fi
-        env:
-          REF: ${{ inputs.ref || 'cubrid-daily' }}
       - name: Reclaim disk space
         run: .github/ci-prerequisites.sh
       - name: Start CUBRID ${{ matrix.cubrid-version }}

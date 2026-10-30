@@ -15,9 +15,7 @@ release. This fork runs the full test suite against CUBRID every day to catch th
 | CUBRID versions | 10.2, 11.0, 11.2, 11.3, 11.4, and the latest development build |
 | JDBC driver | The released driver from Maven Central. The development build uses the driver it ships with |
 | Scope | `./gradlew ciCheck`, the same goal Hibernate uses for its own database jobs |
-| Source | The `cubrid-daily` branch (dialect work not yet in Hibernate) with the latest `hibernate/main` merged in |
-
-If the merge conflicts, the run tests `cubrid-daily` alone and shows a warning.
+| Source | This fork's `main`, which a daily job keeps in sync with `hibernate/main` |
 
 Results and test reports for each version are on the
 [CUBRID CI](https://github.com/CUBRID/hibernate-orm/actions/workflows/cubrid-ci.yml) page.
