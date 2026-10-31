@@ -75,7 +75,8 @@ jobs:
       - name: Run tests
         run: |
           read -ra gradle_args <<< "$GRADLE_ARGS"
-          ./gradlew "${gradle_args[@]}" -Pdb=cubrid -Plog-test-progress=true --stacktrace
+          # hibernate-core always has known CUBRID failures, so keep going to run the other modules too
+          ./gradlew "${gradle_args[@]}" -Pdb=cubrid -Plog-test-progress=true --stacktrace --continue
         shell: bash
         env:
           GRADLE_ARGS: ${{ inputs.gradle-args || 'ciCheck' }}

@@ -14,7 +14,7 @@ release. This fork runs the full test suite against CUBRID every day to catch th
 | Schedule | Every day at 18:30 UTC |
 | CUBRID versions | 10.2, 11.0, 11.2, 11.3, 11.4, and the latest development build |
 | JDBC driver | The released driver from Maven Central. The development build uses the driver it ships with |
-| Scope | `./gradlew ciCheck`, the same goal Hibernate uses for its own database jobs |
+| Scope | `./gradlew ciCheck --continue`, the same goal Hibernate uses for its own database jobs. `--continue` lets the other modules run after the known failures in `hibernate-core` |
 | Source | This fork's `main`, which a daily job keeps in sync with `hibernate/main` |
 
 Results and test reports for each version are on the
