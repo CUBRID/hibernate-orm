@@ -16,6 +16,7 @@ import java.util.function.Consumer;
 import org.hibernate.AssertionFailure;
 import org.hibernate.annotations.NotFoundAction;
 import org.hibernate.annotations.OnDeleteAction;
+import org.hibernate.annotations.SourceType;
 import org.hibernate.boot.MappingException;
 import org.hibernate.boot.internal.LimitedCollectionClassification;
 import org.hibernate.boot.jaxb.Origin;
@@ -54,6 +55,7 @@ import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmLazyWithExtraEnum;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmLazyWithNoProxyEnum;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmListIndexType;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmListType;
+import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmTimestampSourceEnum;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmManyToAnyCollectionElementType;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmManyToManyCollectionElementType;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmManyToOneType;
@@ -166,6 +168,7 @@ import org.hibernate.boot.jaxb.mapping.spi.JaxbSqlSelectImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbSynchronizedTableImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbTableImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbTransientImpl;
+import org.hibernate.boot.jaxb.mapping.spi.JaxbUpdateTimestampImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbUserTypeImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbVersionImpl;
 import org.hibernate.boot.jaxb.mapping.spi.db.JaxbTableMapping;
@@ -3527,7 +3530,7 @@ public class HbmXmlTransformer {
 		target.setOrderColumn( orderColumn );
 
 		if ( index != null ) {
-			// todo : base on order-column
+			// <index/> (legacy form) has no `base` attribute - it is always 0-based
 			if ( isNotEmpty( index.getColumnAttribute() ) ) {
 				orderColumn.setName( index.getColumnAttribute() );
 			}
@@ -3539,7 +3542,6 @@ public class HbmXmlTransformer {
 			}
 		}
 		else if ( listIndex != null ) {
-			// todo : base on order-column
 			if ( isNotEmpty( listIndex.getColumnAttribute() ) ) {
 				orderColumn.setName( listIndex.getColumnAttribute() );
 			}
@@ -3547,6 +3549,18 @@ public class HbmXmlTransformer {
 				orderColumn.setName( listIndex.getColumn().getName() );
 				orderColumn.setNullable( invert( listIndex.getColumn().isNotNull() ) );
 				orderColumn.setColumnDefinition( listIndex.getColumn().getSqlType() );
+			}
+
+			// <list-index base="N"/> indicates the value stored in the index column for the
+			// first element of the list; it defaults to "0" and has no equivalent on
+			// <order-column/> in mapping.xml - it must be transferred as <list-index-base/>
+			// (@org.hibernate.annotations.ListIndexBase) instead.
+			final var base = listIndex.getBase();
+			if ( isNotEmpty( base ) ) {
+				final var baseValue = Integer.parseInt( base );
+				if ( baseValue != 0 ) {
+					target.setListIndexBase( baseValue );
+				}
 			}
 		}
 	}
@@ -5009,6 +5023,11 @@ public class HbmXmlTransformer {
 			}
 			//noinspection deprecation
 			version.setTemporal( TemporalType.TIMESTAMP );
+			if ( hbmTimestamp.getSource() == JaxbHbmTimestampSourceEnum.DB ) {
+				final var updateTimestamp = new JaxbUpdateTimestampImpl();
+				updateTimestamp.setSource( SourceType.DB );
+				version.setUpdateTimestamp( updateTimestamp );
+			}
 			target.getAttributes().setVersion( version );
 		}
 	}

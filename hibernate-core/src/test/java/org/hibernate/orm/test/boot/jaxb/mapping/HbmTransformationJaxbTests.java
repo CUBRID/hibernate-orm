@@ -35,6 +35,7 @@ import org.hibernate.boot.jaxb.mapping.spi.JaxbManyToOneImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbOneToManyImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbOneToOneImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbTransientImpl;
+import org.hibernate.boot.jaxb.mapping.spi.JaxbVersionImpl;
 import org.hibernate.boot.jaxb.spi.Binding;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbSingularFetchModeImpl;
 import org.hibernate.boot.registry.classloading.spi.ClassLoaderService;
@@ -907,6 +908,37 @@ public class HbmTransformationJaxbTests {
 	}
 
 	@Test
+	@JiraKey( "HHH-20975" )
+	public void testListIndexBaseTransformation(ServiceRegistryScope scope) {
+		// <list-index base="1"/> has no equivalent attribute on <order-column/> in mapping.xml;
+		// it must be transferred as the sibling <list-index-base/> element instead. The <key/>
+		// also uses property-ref, targeting the owning entity's alternate key rather than its PK.
+		transformAndVerify( "xml/jaxb/mapping/list-index-base/hbm.xml", scope, transformed -> {
+			assertThat( transformed.getEntities() ).hasSize( 1 );
+
+			final JaxbEntityImpl noteEntity = transformed.getEntities().get( 0 );
+			assertThat( noteEntity.getAttributes().getElementCollectionAttributes() ).hasSize( 1 );
+
+			final var items = noteEntity.getAttributes().getElementCollectionAttributes().get( 0 );
+			assertThat( items.getName() ).isEqualTo( "items" );
+			assertThat( items.getOrderColumn() ).isNotNull();
+			assertThat( items.getOrderColumn().getName() ).isEqualTo( "position" );
+			assertThat( items.getListIndexBase() )
+					.as( "<list-index base='1'/> should be transferred as <list-index-base>1</list-index-base>" )
+					.isEqualTo( 1 );
+
+			final var collectionTable = items.getCollectionTable();
+			assertThat( collectionTable ).isNotNull();
+			assertThat( collectionTable.getJoinColumns() ).hasSize( 1 );
+			final var keyJoinColumn = collectionTable.getJoinColumns().get( 0 );
+			assertThat( keyJoinColumn.getName() ).isEqualTo( "note_id" );
+			assertThat( keyJoinColumn.getReferencedColumnName() )
+					.as( "Collection <key property-ref='altKey'> should reference the alternate-key column" )
+					.isEqualTo( "alt_key" );
+		} );
+	}
+
+	@Test
 	public void testElementCollectionNotNullTransformation(ServiceRegistryScope scope) {
 		transformAndVerify( "xml/jaxb/mapping/element-not-null/hbm.xml", scope, transformed -> {
 			assertThat( transformed.getEntities() ).hasSize( 1 );
@@ -1775,6 +1807,48 @@ public class HbmTransformationJaxbTests {
 			assertThat( anotherEntity.getAttributes().getBasicAttributes() )
 					.extracting( JaxbBasicImpl::getName )
 					.containsExactly( "code" );
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-21016" )
+	public void testTimestampSourceDbTransformation(ServiceRegistryScope scope) {
+		// hbm <timestamp source="db"/> should be transformed into a <version> with
+		// <temporal>TIMESTAMP</temporal> and an <update-timestamp source="DB"/>.
+		transformAndVerify( "xml/jaxb/mapping/timestamp-source/hbm.xml", scope, (transformed) -> {
+			final JaxbEntityImpl dbSourcedEntity = transformed.getEntities().stream()
+					.filter( e -> "DbSourcedEntity".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			final JaxbVersionImpl version = dbSourcedEntity.getAttributes().getVersion();
+			assertThat( version ).isNotNull();
+			assertThat( version.getName() ).isEqualTo( "lastModified" );
+			assertThat( version.getColumn().getName() ).isEqualTo( "last_modified" );
+			//noinspection deprecation
+			assertThat( version.getTemporal() ).isEqualTo( jakarta.persistence.TemporalType.TIMESTAMP );
+			assertThat( version.getUpdateTimestamp() ).isNotNull();
+			assertThat( version.getUpdateTimestamp().getSource() )
+					.isEqualTo( org.hibernate.annotations.SourceType.DB );
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-21016" )
+	public void testTimestampSourceVmTransformation(ServiceRegistryScope scope) {
+		// hbm <timestamp source="vm"/> (the default) should not produce an <update-timestamp> element.
+		transformAndVerify( "xml/jaxb/mapping/timestamp-source/hbm.xml", scope, (transformed) -> {
+			final JaxbEntityImpl vmSourcedEntity = transformed.getEntities().stream()
+					.filter( e -> "VmSourcedEntity".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			final JaxbVersionImpl version = vmSourcedEntity.getAttributes().getVersion();
+			assertThat( version ).isNotNull();
+			assertThat( version.getName() ).isEqualTo( "lastModified" );
+			//noinspection deprecation
+			assertThat( version.getTemporal() ).isEqualTo( jakarta.persistence.TemporalType.TIMESTAMP );
+			assertThat( version.getUpdateTimestamp() ).isNull();
 		} );
 	}
 
