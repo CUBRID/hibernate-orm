@@ -18,6 +18,11 @@ on:
         description: 'Gradle tasks and filters to run against CUBRID'
         required: false
         default: 'ciCheck'
+      create-issue:
+        description: 'Post the report as an issue (scheduled runs always do)'
+        required: false
+        default: false
+        type: boolean
   schedule:
     # 30 minutes after "Sync upstream" has merged hibernate/main into our main
     - cron: '30 18 * * *'
@@ -90,3 +95,109 @@ jobs:
           name: test-results-${{ matrix.cubrid-version }}
           path: '**/target/test-results/**/*.xml'
           if-no-files-found: warn
+      - name: Record the environment
+        id: environment
+        if: always()
+        shell: bash
+        run: |
+          set +eo pipefail
+          engine=$(docker exec cubrid sh -lc cubrid_rel 2>/dev/null | sed -n 's/^CUBRID [^(]*(\([^)]*\)).*/\1/p' | head -n 1)
+          digest=$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE" 2>/dev/null)
+          driver=$(sed -n 's/^cubrid = "\(.*\)"$/\1/p' gradle/libs.versions.toml)
+          jdk=$(java -version 2>&1 | head -n 1)
+          {
+            echo "engine=${engine:-unknown}"
+            echo "digest=${digest#*@}"
+            echo "driver=${driver:-unknown}"
+            echo "jdk=${jdk:-unknown}"
+            echo "commit=$(git rev-parse HEAD)"
+          } >> "$GITHUB_OUTPUT"
+        env:
+          IMAGE: ${{ matrix.image }}
+      - name: Summarize the results
+        if: always()
+        run: >
+          python3 .github/cubrid-ci/collect.py --version "$VERSION" --root . --out "cubrid-results-$VERSION.json"
+          --run-id "$GITHUB_RUN_ID" --image "$IMAGE" --engine "$ENGINE" --digest "$DIGEST" --driver "$DRIVER"
+          --driver-source "$DRIVER_SOURCE" --runner "$ImageOS $ImageVersion" --jdk "$JDK" --commit "$COMMIT"
+        env:
+          VERSION: ${{ matrix.cubrid-version }}
+          IMAGE: ${{ matrix.image }}
+          ENGINE: ${{ steps.environment.outputs.engine }}
+          DIGEST: ${{ steps.environment.outputs.digest }}
+          DRIVER: ${{ steps.environment.outputs.driver }}
+          DRIVER_SOURCE: ${{ matrix.bundled-driver && 'image' || 'maven' }}
+          JDK: ${{ steps.environment.outputs.jdk }}
+          COMMIT: ${{ steps.environment.outputs.commit }}
+      - name: Upload the results summary
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cubrid-results-${{ matrix.cubrid-version }}
+          path: cubrid-results-${{ matrix.cubrid-version }}.json
+          retention-days: 30
+
+  report:
+    name: Report
+    needs: test
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.ref || 'main' }}
+          persist-credentials: false
+          sparse-checkout: .github/cubrid-ci
+      - name: Download the results of this run
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # 8.0.2
+        with:
+          pattern: cubrid-results-*
+          path: results
+          merge-multiple: true
+      - name: Find the previous scheduled run
+        run: .github/cubrid-ci/baseline.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULTS_DIR: results
+      - name: Write the report
+        run: |
+          python3 .github/cubrid-ci/report.py --results-dir results --out-dir out \
+            --baseline baseline/cubrid-report-state.json --compare compare.json \
+            --expect "$EXPECT" --date "$(TZ=Asia/Seoul date +%F)" \
+            --run-id "$GITHUB_RUN_ID" --run-url "$RUN_URL" --repo-url "$REPO_URL"
+          cat out/summary.md >> "$GITHUB_STEP_SUMMARY"
+        env:
+          # keep in step with the versions of the test matrix
+          EXPECT: "10.2,11.0,11.2,11.3,11.4,Nightly"
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+      - name: Keep the state for the next run
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cubrid-report-state
+          path: out/cubrid-report-state.json
+          retention-days: 90
+      - name: Post the daily issue
+        if: github.event_name == 'schedule' || inputs.create-issue
+        run: |
+          gh label create ci-report --description "Daily CUBRID CI report" --color 0E8A16 --force
+          url=$(gh issue create --title "$(cat out/title.txt)" --body-file out/issue.md --label ci-report)
+          echo "$url"
+          if [ "$(cat out/keep-open.txt)" != "true" ]; then
+            gh issue close "$url" --reason completed
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+      - name: Fail when results are missing
+        run: |
+          if [ "$(cat out/incomplete.txt)" = "true" ]; then
+            echo "::error::Some CUBRID versions produced no results or lost a module, see the report"
+            exit 1
+          fi
