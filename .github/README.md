@@ -22,13 +22,25 @@ Results and test reports for each version are on the
 
 ## Reading the results
 
-The run is red on purpose. Tests that fail because of a CUBRID JDBC driver defect or a
-Hibernate issue are not skipped. They stay failing until the fix is released, and then pass
-without any change here. So look at which tests failed: a failure that is not on the known
-list is a new problem.
+Tests that fail because of a CUBRID JDBC driver defect or a Hibernate issue are not skipped.
+They stay failing until the fix is released, and then pass without any change here, so a red
+run on its own does not mean that something new broke. The `Report` job at the end of each
+run compares it with the previous scheduled run and lists the tests that started or stopped
+failing, with what changed in between: the Hibernate commits, the JDBC driver, the CUBRID
+engine build and the runner.
 
 The known failures and excluded tests are tracked in
 [TOOLS-4940](http://jira.cubrid.org/browse/TOOLS-4940) (in Korean).
+
+## Daily report
+
+Every scheduled run posts its report as an issue labelled
+[`ci-report`](https://github.com/CUBRID/hibernate-orm/issues?q=label%3Aci-report). The title
+gives the outcome, for example `CUBRID CI 2026-11-10: 1 new failure, 11 fixed`. Issues with new
+failures or missing results stay open until someone has looked at them, and the others are
+closed as soon as they are posted.
+
+To get the report by email, watch this repository with **Custom** and **Issues** selected.
 
 ## Tests that do not run
 
