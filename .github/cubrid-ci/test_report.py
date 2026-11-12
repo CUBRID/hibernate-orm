@@ -140,6 +140,16 @@ class RenderTest(unittest.TestCase):
         self.assertFalse(text.startswith('## '))
 
 
+class EnvironmentTest(unittest.TestCase):
+    def test_without_a_baseline_each_value_names_its_versions(self):
+        results = {'11.4': result(env={'engine': '11.4.7.1994'}),
+                   'Nightly': result(version='Nightly', env={'engine': '11.5.0.2856', 'driver': '11.4.0.0088'})}
+        text = report.render(report.build_report(results, None, {}, ['11.4', 'Nightly'], RUN), full=False)
+        self.assertIn('- Engine build: 11.4.7.1994 (11.4); 11.5.0.2856 (Nightly)', text)
+        self.assertIn('- JDBC driver: 11.3.2.0053 (11.4); 11.4.0.0088 (Nightly)', text)
+        self.assertIn('- JDK: openjdk 25\n', text)
+
+
 class MainTest(unittest.TestCase):
     def test_main_writes_every_output(self):
         tmp = tempfile.mkdtemp()

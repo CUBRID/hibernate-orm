@@ -157,8 +157,14 @@ def env_lines(report):
     if report['baseline'] is None:
         lines = []
         for field, title in ENV_FIELDS:
-            values = sorted({shown(field, report['results'][v]['env'].get(field, 'unknown')) for v in ran})
-            lines.append(f"- {title}: {', '.join(values) if values else 'unknown'}")
+            groups = {}
+            for v in ran:
+                groups.setdefault(shown(field, report['results'][v]['env'].get(field, 'unknown')), []).append(v)
+            if len(groups) == 1:
+                text = next(iter(groups))
+            else:
+                text = '; '.join(f"{value} ({', '.join(vs)})" for value, vs in groups.items()) or 'unknown'
+            lines.append(f'- {title}: {text}')
         return lines
     compare = report['compare']
     if compare.get('commits'):
