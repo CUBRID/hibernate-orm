@@ -1,5 +1,7 @@
 package org.hibernate.resource.jdbc.internal;
 
+import jakarta.annotation.Nonnull;
+
 import org.hibernate.resource.jdbc.spi.StatementInspector;
 
 /**
@@ -12,7 +14,8 @@ public class EmptyStatementInspector implements StatementInspector {
 	public static final StatementInspector INSTANCE = new EmptyStatementInspector();
 
 	@Override
-	public String inspect(String sql) {
+	@Nonnull
+	public String inspect(@Nonnull String sql) {
 		return sql;
 	}
 

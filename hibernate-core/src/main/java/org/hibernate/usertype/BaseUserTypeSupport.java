@@ -1,5 +1,8 @@
 package org.hibernate.usertype;
 
+import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
+
 import org.hibernate.SPI;
 
 import static org.hibernate.SPI.Role.IMPLEMENT;
@@ -36,7 +39,7 @@ public abstract class BaseUserTypeSupport<T> implements UserType<T> {
 	private ValueExtractor<T> jdbcValueExtractor;
 	private ValueBinder<T> jdbcValueBinder;
 
-	protected abstract void resolve(BiConsumer<BasicJavaType<T>, JdbcType> resolutionConsumer);
+	protected abstract void resolve(@Nonnull BiConsumer<BasicJavaType<T>, JdbcType> resolutionConsumer);
 
 	private void ensureResolved() {
 		if ( !resolved ) {
@@ -52,11 +55,13 @@ public abstract class BaseUserTypeSupport<T> implements UserType<T> {
 		}
 	}
 
+	@Nonnull
 	protected JdbcType jdbcType() {
 		ensureResolved();
 		return jdbcType;
 	}
 
+	@Nonnull
 	protected BasicJavaType<T> javaType() {
 		ensureResolved();
 		return javaType;
@@ -69,34 +74,41 @@ public abstract class BaseUserTypeSupport<T> implements UserType<T> {
 	}
 
 	@Override
+	@Nonnull
 	public Class<T> returnedClass() {
 		return javaType().getJavaTypeClass();
 	}
 
 	@Override
-	public boolean equals(T x, T y) throws HibernateException {
+	public boolean equals(@Nullable T x, @Nullable T y) throws HibernateException {
 		return javaType().areEqual( x, y );
 	}
 
 	@Override
-	public int hashCode(T x) throws HibernateException {
+	public int hashCode(@Nonnull T x) throws HibernateException {
 		return javaType().extractHashCode( x );
 	}
 
 	@Override
-	public T nullSafeGet(ResultSet rs, int position, WrapperOptions options) throws SQLException {
+	@Nullable
+	public T nullSafeGet(@Nonnull ResultSet rs, int position, @Nonnull WrapperOptions options) throws SQLException {
 		ensureResolved();
 		return jdbcValueExtractor.extract( rs, position, options );
 	}
 
 	@Override
-	public void nullSafeSet(PreparedStatement st, T value, int index, WrapperOptions options) throws SQLException {
+	public void nullSafeSet(
+			@Nonnull PreparedStatement st,
+			@Nullable T value,
+			int index,
+			@Nonnull WrapperOptions options) throws SQLException {
 		ensureResolved();
 		jdbcValueBinder.bind( st, value, index, options );
 	}
 
 	@Override
-	public T deepCopy(T value) throws HibernateException {
+	@Nullable
+	public T deepCopy(@Nullable T value) throws HibernateException {
 		return javaType().getMutabilityPlan().deepCopy( value );
 	}
 
@@ -106,12 +118,14 @@ public abstract class BaseUserTypeSupport<T> implements UserType<T> {
 	}
 
 	@Override
-	public Serializable disassemble(T value) throws HibernateException {
+	@Nullable
+	public Serializable disassemble(@Nullable T value) throws HibernateException {
 		return javaType().getMutabilityPlan().disassemble( value, null );
 	}
 
 	@Override
-	public T assemble(Serializable cached, Object owner) throws HibernateException {
+	@Nullable
+	public T assemble(@Nullable Serializable cached, @Nullable Object owner) throws HibernateException {
 		return javaType().getMutabilityPlan().assemble( cached, null );
 	}
 }

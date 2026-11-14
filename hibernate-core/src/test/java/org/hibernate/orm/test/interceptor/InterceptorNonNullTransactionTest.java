@@ -1,5 +1,6 @@
 package org.hibernate.orm.test.interceptor;
 
+import jakarta.annotation.Nonnull;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
@@ -217,31 +218,25 @@ public class InterceptorNonNullTransactionTest extends BaseJpaOrNativeBootstrapF
 		}
 
 		@Override
-		public void afterTransactionBegin(org.hibernate.Transaction tx) {
+		public void afterTransactionBegin(@Nonnull org.hibernate.Transaction tx) {
 			afterTransactionBeginMethodCalled = true;
-			if ( tx != null ) {
-				afterTransactionBeginAssertionPassed = false;
-				assertEquals( TransactionStatus.ACTIVE, tx.getStatus() );
-				afterTransactionBeginAssertionPassed = true;
-			}
+			afterTransactionBeginAssertionPassed = false;
+			assertEquals( TransactionStatus.ACTIVE, tx.getStatus() );
+			afterTransactionBeginAssertionPassed = true;
 		}
 		@Override
-		public void beforeTransactionCompletion(org.hibernate.Transaction tx) {
+		public void beforeTransactionCompletion(@Nonnull org.hibernate.Transaction tx) {
 			beforeTransactionCompletionMethodCalled = true;
-			if ( tx != null ) {
-				beforeTransactionCompletionAssertionPassed = false;
-				assertEquals( TransactionStatus.ACTIVE, tx.getStatus() );
-				beforeTransactionCompletionAssertionPassed = true;
-			}
+			beforeTransactionCompletionAssertionPassed = false;
+			assertEquals( TransactionStatus.ACTIVE, tx.getStatus() );
+			beforeTransactionCompletionAssertionPassed = true;
 		}
 		@Override
-		public void afterTransactionCompletion(org.hibernate.Transaction tx) {
+		public void afterTransactionCompletion(@Nonnull org.hibernate.Transaction tx) {
 			afterTransactionCompletionMethodCalled = true;
-			if ( tx != null ) {
-				afterTransactionCompletionAssertionPassed = false;
-				assertEquals( TransactionStatus.COMMITTED, tx.getStatus() );
-				afterTransactionCompletionAssertionPassed = true;
-			}
+			afterTransactionCompletionAssertionPassed = false;
+			assertEquals( TransactionStatus.COMMITTED, tx.getStatus() );
+			afterTransactionCompletionAssertionPassed = true;
 		}
 	};
 }

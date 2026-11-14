@@ -1,5 +1,8 @@
 package org.hibernate.usertype;
 
+import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
+
 import org.hibernate.SPI;
 
 import static org.hibernate.SPI.Role.IMPLEMENT;
@@ -32,6 +35,10 @@ import org.hibernate.metamodel.spi.ValueAccess;
  * <p>
  * Properties of this embeddable class are sorted alphabetically by
  * name, and assigned an index based on this ordering.
+ * <p>
+ * Hibernate handles null component values before calling {@link #deepCopy},
+ * {@link #disassemble}, or {@link #assemble}. During merge, it calls
+ * {@link #replace} only for a non-null detached value.
  * <p>
  * For example, if we were to implement a {@code CompositeUserType}
  * for a {@code MonetaryAmount} class, we would also provide a
@@ -159,41 +166,45 @@ public interface CompositeUserType<J> extends EmbeddableInstantiator {
 	 * @param property the property index
 	 * @return the property value
 	 */
-	Object getPropertyValue(J component, int property) throws HibernateException;
+	@Nullable
+	Object getPropertyValue(@Nonnull J component, int property) throws HibernateException;
 
 	@Override
-	J instantiate(ValueAccess values);
+	@Nullable
+	J instantiate(@Nonnull ValueAccess values);
 
 	/**
 	 * The class that represents the embeddable mapping of the type.
 	 */
+	@Nonnull
 	Class<?> embeddable();
 
 	/**
 	 * The class returned by {@code instantiate()}.
 	 */
+	@Nonnull
 	Class<J> returnedClass();
 
 	/**
 	 * Compare two instances of the class mapped by this type for persistence "equality".
 	 * Equality of the persistent state.
 	 */
-	boolean equals(J x, J y);
+	boolean equals(@Nullable J x, @Nullable J y);
 
 	/**
 	 * Get a hashcode for the instance, consistent with persistence "equality"
 	 */
-	int hashCode(J x);
+	int hashCode(@Nonnull J x);
 
 	/**
 	 * Return a deep copy of the persistent state, stopping at entities and at
-	 * collections. It is not necessary to copy immutable objects, or null
-	 * values, in which case it is safe to simply return the argument.
+	 * collections. For an immutable value, it is safe to return the argument.
 	 *
-	 * @param value the object to be cloned, which may be null
-	 * @return Object a copy
+	 * @param value the object to be cloned
+	 * @return a copy of the value
 	 */
-	J deepCopy(J value);
+	@Nonnull
+	J deepCopy(@Nonnull J value);
 
 	/**
 	 * Are objects of this type mutable?
@@ -211,39 +222,42 @@ public interface CompositeUserType<J> extends EmbeddableInstantiator {
 	 * @param value the object to be cached
 	 * @return a cacheable representation of the object
 	 */
-	Serializable disassemble(J value);
+	@Nonnull
+	Serializable disassemble(@Nonnull J value);
 
 	/**
 	 * Reconstruct an object from the cacheable representation. At the very least this
 	 * method should perform a deep copy if the type is mutable. (optional operation)
 	 *
-	 * @param cached the object to be cached
+	 * @param cached the cacheable representation returned by {@link #disassemble}
 	 * @param owner the owner of the cached object
 	 * @return a reconstructed object from the cacheable representation
 	 */
-	J assemble(Serializable cached, Object owner);
+	@Nonnull
+	J assemble(@Nonnull Serializable cached, @Nullable Object owner);
 
 	/**
 	 * During merge, replace the existing (target) value in the entity we are merging to
 	 * with a new (original) value from the detached entity we are merging. For immutable
-	 * objects, or null values, it is safe to simply return the first parameter. For
+	 * objects, it is safe to simply return the first parameter. For
 	 * mutable objects, it is safe to return a copy of the first parameter. For objects
 	 * with component values, it might make sense to recursively replace component values.
 	 *
 	 * @param detached the value from the detached entity being merged
 	 * @param managed the value in the managed entity
 	 *
-	 * @return the value to be merged
+	 * @return the non-null replacement for the managed value
 	 */
-	J replace(J detached, J managed, Object owner);
+	@Nonnull
+	J replace(@Nonnull J detached, @Nullable J managed, @Nullable Object owner);
 
 	@Override
-	default boolean isInstance(Object object) {
+	default boolean isInstance(@Nullable Object object) {
 		return returnedClass().isInstance( object );
 	}
 
 	@Override
-	default boolean isSameClass(Object object) {
+	default boolean isSameClass(@Nonnull Object object) {
 		return object.getClass().equals( returnedClass() );
 	}
 }

@@ -1,5 +1,6 @@
 package org.hibernate.orm.test.caching.mocked;
 
+import jakarta.annotation.Nonnull;
 import jakarta.persistence.Cacheable;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -308,7 +309,7 @@ public class ReadWriteCacheTest {
 		}
 
 		@Override
-		public void beforeTransactionCompletion(Transaction tx) {
+		public void beforeTransactionCompletion(@Nonnull Transaction tx) {
 			if ( interceptTransaction.get() ) {
 				try {
 					Session session = factory.openSession();

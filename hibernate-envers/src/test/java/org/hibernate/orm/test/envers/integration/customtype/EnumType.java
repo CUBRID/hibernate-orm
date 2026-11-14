@@ -1,6 +1,7 @@
 package org.hibernate.orm.test.envers.integration.customtype;
 
 import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.MapKeyEnumerated;
 import org.hibernate.AssertionFailure;
@@ -92,7 +93,7 @@ public class EnumType<T extends Enum<T>>
 	 * </ul>
 	 */
 	@Override
-	public void setParameterValues(Properties parameters) {
+	public void setParameterValues(@Nonnull Properties parameters) {
 		// IMPL NOTE: we handle 2 distinct cases here:
 		// 		1) we are passed a ParameterType instance in the incoming Properties - generally
 		//			speaking this indicates the annotation-binding case, and the passed ParameterType
@@ -187,22 +188,24 @@ public class EnumType<T extends Enum<T>>
 	}
 
 	@Override
+	@Nonnull
 	public Class<T> returnedClass() {
 		return enumClass;
 	}
 
 	@Override
-	public boolean equals(T x, T y) throws HibernateException {
+	public boolean equals(@Nullable T x, @Nullable T y) throws HibernateException {
 		return x == y;
 	}
 
 	@Override
-	public int hashCode(T x) throws HibernateException {
+	public int hashCode(@Nonnull T x) throws HibernateException {
 		return x == null ? 0 : x.hashCode();
 	}
 
 	@Override
-	public T nullSafeGet(ResultSet rs, int position, WrapperOptions options)
+	@Nullable
+	public T nullSafeGet(@Nonnull ResultSet rs, int position, @Nonnull WrapperOptions options)
 			throws SQLException {
 		verifyConfigured();
 		return jdbcType.getExtractor( enumJavaType ).extract( rs, position, options );
@@ -215,14 +218,19 @@ public class EnumType<T extends Enum<T>>
 	}
 
 	@Override
-	public void nullSafeSet(PreparedStatement st, T value, int index, WrapperOptions options)
+	public void nullSafeSet(
+			@Nonnull PreparedStatement st,
+			@Nullable T value,
+			int index,
+			@Nonnull WrapperOptions options)
 			throws SQLException {
 		verifyConfigured();
 		jdbcType.getBinder( enumJavaType ).bind( st, value, index, options );
 	}
 
 	@Override
-	public T deepCopy(T value) throws HibernateException {
+	@Nullable
+	public T deepCopy(@Nullable T value) throws HibernateException {
 		return value;
 	}
 
@@ -232,32 +240,37 @@ public class EnumType<T extends Enum<T>>
 	}
 
 	@Override
-	public Serializable disassemble(T value) throws HibernateException {
+	@Nullable
+	public Serializable disassemble(@Nullable T value) throws HibernateException {
 		return value;
 	}
 
 	@Override
-	public T assemble(Serializable cached, Object owner) throws HibernateException {
+	@Nullable
+	public T assemble(@Nullable Serializable cached, @Nullable Object owner) throws HibernateException {
 		return (T) cached;
 	}
 
 	@Override
-	public T replace(T original, T target, Object owner) throws HibernateException {
+	@Nullable
+	public T replace(@Nullable T original, @Nullable T target, @Nullable Object owner) throws HibernateException {
 		return original;
 	}
 
 	@Override
+	@Nullable
 	public TypeConfiguration getTypeConfiguration() {
 		return typeConfiguration;
 	}
 
 	@Override
-	public void setTypeConfiguration(TypeConfiguration typeConfiguration) {
+	public void setTypeConfiguration(@Nonnull TypeConfiguration typeConfiguration) {
 		this.typeConfiguration = typeConfiguration;
 	}
 
 	@Override
-	public String toSqlLiteral(T value) {
+	@Nonnull
+	public String toSqlLiteral(@Nonnull T value) {
 		verifyConfigured();
 		return isOrdinal()
 				? Integer.toString( value.ordinal() )
@@ -265,19 +278,22 @@ public class EnumType<T extends Enum<T>>
 	}
 
 	@Override
-	public String toString(T value) {
+	@Nonnull
+	public String toString(@Nonnull T value) {
 		verifyConfigured();
 		return enumJavaType.toName( value );
 	}
 
 	@Override
-	public T fromStringValue(CharSequence sequence) {
+	@Nonnull
+	public T fromStringValue(@Nonnull CharSequence sequence) {
 		verifyConfigured();
 		return enumJavaType.fromName( sequence.toString() );
 	}
 
 	@Override @SuppressWarnings("unchecked")
-	public String toLoggableString(Object value, SessionFactoryImplementor factory) {
+	@Nonnull
+	public String toLoggableString(@Nonnull Object value, @Nonnull SessionFactoryImplementor factory) {
 		verifyConfigured();
 		return enumJavaType.extractLoggableRepresentation( (T) value );
 	}

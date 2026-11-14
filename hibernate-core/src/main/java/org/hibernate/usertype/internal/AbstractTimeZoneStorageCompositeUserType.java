@@ -1,6 +1,10 @@
 package org.hibernate.usertype.internal;
 
+import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
+
 import java.io.Serializable;
+import java.util.Objects;
 
 import org.hibernate.usertype.CompositeUserType;
 
@@ -13,17 +17,18 @@ public abstract class AbstractTimeZoneStorageCompositeUserType<T> implements Com
 	public static final String ZONE_OFFSET_NAME = "zoneOffset";
 
 	@Override
-	public boolean equals(T x, T y) {
-		return x.equals( y );
+	public boolean equals(@Nullable T x, @Nullable T y) {
+		return Objects.equals( x, y );
 	}
 
 	@Override
-	public int hashCode(T x) {
+	public int hashCode(@Nonnull T x) {
 		return x.hashCode();
 	}
 
 	@Override
-	public T deepCopy(T value) {
+	@Nonnull
+	public T deepCopy(@Nonnull T value) {
 		return value;
 	}
 
@@ -33,18 +38,21 @@ public abstract class AbstractTimeZoneStorageCompositeUserType<T> implements Com
 	}
 
 	@Override
-	public Serializable disassemble(T value) {
+	@Nonnull
+	public Serializable disassemble(@Nonnull T value) {
 		return (Serializable) value;
 	}
 
 	@Override
-	public T assemble(Serializable cached, Object owner) {
+	@Nonnull
+	public T assemble(@Nonnull Serializable cached, @Nullable Object owner) {
 		//noinspection unchecked
 		return (T) cached;
 	}
 
 	@Override
-	public T replace(T detached, T managed, Object owner) {
+	@Nonnull
+	public T replace(@Nonnull T detached, @Nullable T managed, @Nullable Object owner) {
 		return detached;
 	}
 
