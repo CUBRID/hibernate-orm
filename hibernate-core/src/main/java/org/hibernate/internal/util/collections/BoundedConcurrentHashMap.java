@@ -1,7 +1,5 @@
 package org.hibernate.internal.util.collections;
 
-import java.io.IOException;
-import java.io.Serializable;
 import java.util.AbstractCollection;
 import java.util.AbstractMap;
 import java.util.AbstractSet;
@@ -13,6 +11,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
@@ -85,7 +84,7 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 @Deprecated(forRemoval = true)
 public class BoundedConcurrentHashMap<K, V> extends AbstractMap<K, V>
-		implements ConcurrentMap<K, V>, Serializable {
+		implements ConcurrentMap<K, V> {
 
 	/*
 	 * The basic strategy is to subdivide the table among Segments,
@@ -140,9 +139,9 @@ public class BoundedConcurrentHashMap<K, V> extends AbstractMap<K, V>
 	 */
 	final Segment<K, V>[] segments;
 
-	transient Set<K> keySet;
-	transient Set<Entry<K, V>> entrySet;
-	transient Collection<V> values;
+	Set<K> keySet;
+	Set<Entry<K, V>> entrySet;
+	Collection<V> values;
 
 	/* ---------------- Small Utilities -------------- */
 
@@ -200,27 +199,6 @@ public class BoundedConcurrentHashMap<K, V> extends AbstractMap<K, V>
 			this.hash = hash;
 			this.next = next;
 			this.value = value;
-		}
-
-		@Override
-		public int hashCode() {
-			int result = 17;
-			result = result * 31 + hash;
-			result = result * 31 + key.hashCode();
-			return result;
-		}
-
-		@Override
-		public boolean equals(Object o) {
-			// HashEntry is internal class, never leaks out of CHM, hence slight optimization
-			if ( this == o ) {
-				return true;
-			}
-			if ( o == null ) {
-				return false;
-			}
-			HashEntry<?, ?> other = (HashEntry<?, ?>) o;
-			return hash == other.hash && key.equals( other.key );
 		}
 
 		@SuppressWarnings("unchecked")
@@ -342,7 +320,8 @@ public class BoundedConcurrentHashMap<K, V> extends AbstractMap<K, V>
 			try {
 				while ((e = accessQueue.poll()) != null) {
 					removed++;
-					put(e, e.value);
+					// Only refresh the exact entry seen by the reader if it is still resident.
+					replace( e, e.value );
 				}
 			}
 			finally {
@@ -388,7 +367,7 @@ public class BoundedConcurrentHashMap<K, V> extends AbstractMap<K, V>
 			// we could have multiple instances of e in accessQueue; remove them all
 			int removed = 0;
 			while ( accessQueue.remove( e ) ) {
-				removed--;
+				removed++;
 			}
 			accessQueueSize.addAndGet(-removed);
 		}
@@ -453,8 +432,11 @@ public class BoundedConcurrentHashMap<K, V> extends AbstractMap<K, V>
 			super( key, hash, next, value );
 			this.owner = owner;
 			this.state = Recency.HIR_RESIDENT;
+		}
 
-			// initially point everything back to self
+		// Only the shared stack and queue header is linked before insertion.
+		private LIRSHashEntry() {
+			this( null, null, 0, null, null );
 			this.previousInStack = this;
 			this.nextInStack = this;
 			this.previousInQueue = this;
@@ -475,10 +457,9 @@ public class BoundedConcurrentHashMap<K, V> extends AbstractMap<K, V>
 			if ( this == o ) {
 				return true;
 			}
-			if ( o == null ) {
+			if ( !(o instanceof LIRSHashEntry<?, ?> other) ) {
 				return false;
 			}
-			HashEntry<?, ?> other = (HashEntry<?, ?>) o;
 			return hash == other.hash && key.equals( other.key );
 		}
 
@@ -547,18 +528,7 @@ public class BoundedConcurrentHashMap<K, V> extends AbstractMap<K, V>
 
 			// "There are two cases for block X:"
 			if ( inStack ) {
-				// "(1) If X is in the stack S, we change its status to LIR."
-				hot();
-
-				// "This block is also removed from list Q."
-				removeFromQueue();
-
-				// "The LIR block in the bottom of S is moved to the end of list Q
-				// with its status changed to HIR."
-				owner.stackBottom().migrateToQueue();
-
-				// "A stack pruning is then conducted."
-				owner.pruneStack( evicted );
+				promote( evicted );
 			}
 			else {
 				// "(2) If X is not in stack S, we leave its status in HIR and move
@@ -573,13 +543,14 @@ public class BoundedConcurrentHashMap<K, V> extends AbstractMap<K, V>
 		 * non-resident entry is re-computed.
 		 */
 		private Set<HashEntry<K, V>> miss() {
+			final boolean recentlyEvicted = owner.recentlyEvictedKeys.remove( key );
 			Set<HashEntry<K, V>> evicted = Collections.emptySet();
 			if ( owner.hotSize < owner.maximumHotSize ) {
 				warmupMiss();
 			}
 			else {
 				evicted = new HashSet<>();
-				fullMiss( evicted );
+				fullMiss( evicted, recentlyEvicted );
 			}
 
 			// now the missed item is in the cache
@@ -601,7 +572,7 @@ public class BoundedConcurrentHashMap<K, V> extends AbstractMap<K, V>
 		/**
 		 * Records a miss when the hot entry set is full.
 		 */
-		private void fullMiss(Set<HashEntry<K, V>> evicted) {
+		private void fullMiss(Set<HashEntry<K, V>> evicted, boolean recentlyEvicted) {
 			// See section 3.3 case 3:
 			// "Upon accessing an HIR non-resident block X:
 			// This is a miss."
@@ -613,27 +584,31 @@ public class BoundedConcurrentHashMap<K, V> extends AbstractMap<K, V>
 				// becomes a non-resident block), and replace it out of the cache."
 				LIRSHashEntry<K, V> evictedNode = owner.queueFront();
 				evicted.add( evictedNode );
+				if ( owner.maximumHotSize > 0 && evictedNode.inStack() ) {
+					owner.rememberEviction( evictedNode.key );
+				}
 			}
 
 			// "Then we load the requested block X into the freed buffer and place
 			// it on the top of stack S."
-			boolean inStack = inStack();
 			moveToStackTop();
 
-			// "There are two cases for block X:"
-			if ( inStack ) {
-				// "(1) If X is in stack S, we change its status to LIR and move the
-				// LIR block in the bottom of stack S to the end of list Q with its
-				// status changed to HIR. A stack pruning is then conducted.
-				hot();
-				owner.stackBottom().migrateToQueue();
-				owner.pruneStack( evicted );
+			if ( recentlyEvicted ) {
+				promote( evicted );
 			}
 			else {
-				// "(2) If X is not in stack S, we leave its status in HIR and place
-				// it in the end of list Q."
 				cold();
 			}
+		}
+
+		private void promote(Set<HashEntry<K, V>> evicted) {
+			hot();
+			removeFromQueue();
+			// An explicit removal can expose cold entries at the bottom of the stack.
+			// Demote the least recent hot entry to keep the hot set at its target size.
+			owner.pruneStack( evicted );
+			owner.stackBottom().migrateToQueue();
+			owner.pruneStack( evicted );
 		}
 
 		/**
@@ -881,12 +856,15 @@ public class BoundedConcurrentHashMap<K, V> extends AbstractMap<K, V>
 		 * and entries are evicted from the front of the queue.</li>
 		 * </ul>
 		 */
-		private final LIRSHashEntry<K, V> header = new LIRSHashEntry<>( null, null, 0, null, null );
+		private final LIRSHashEntry<K, V> header = new LIRSHashEntry<>();
 
 		/**
 		 * The maximum number of hot entries (L_lirs in the paper).
 		 */
 		private final int maximumHotSize;
+
+		// Keep only the keys of recently evicted cold entries, up to one segment's capacity.
+		private final LinkedHashSet<K> recentlyEvictedKeys = new LinkedHashSet<>();
 
 		/**
 		 * The maximum number of resident entries (L in the paper).
@@ -912,6 +890,13 @@ public class BoundedConcurrentHashMap<K, V> extends AbstractMap<K, V>
 		private static int calculateLIRSize(int maximumSize) {
 			int result = (int) ( L_LIRS * maximumSize );
 			return ( result == maximumSize ) ? maximumSize - 1 : result;
+		}
+
+		private void rememberEviction(K key) {
+			recentlyEvictedKeys.add( key );
+			if ( recentlyEvictedKeys.size() > maximumSize ) {
+				recentlyEvictedKeys.remove( recentlyEvictedKeys.iterator().next() );
+			}
 		}
 
 		@Override
@@ -1001,6 +986,9 @@ public class BoundedConcurrentHashMap<K, V> extends AbstractMap<K, V>
 		public void onEntryRemove(HashEntry<K, V> e) {
 			assert segment.isHeldByCurrentThread();
 			( (LIRSHashEntry<K, V>) e ).remove();
+			if ( size == 0 ) {
+				recentlyEvictedKeys.clear();
+			}
 			int removed = 0;
 			// we could have multiple instances of e in accessQueue; remove them all
 			while ( accessQueue.remove( e ) ) {
@@ -1012,6 +1000,15 @@ public class BoundedConcurrentHashMap<K, V> extends AbstractMap<K, V>
 		@Override
 		public void clear() {
 			assert segment.isHeldByCurrentThread();
+			recentlyEvictedKeys.clear();
+			// A reader can still enqueue a hit on a cleared entry. Mark it nonresident
+			// so that processing that hit cannot link it back into the cache.
+			for ( var entry = stackBottom(); entry != null; entry = stackBottom() ) {
+				entry.evict();
+			}
+			for ( var entry = queueFront(); entry != null; entry = queueFront() ) {
+				entry.evict();
+			}
 			int removed = 0;
 			while (accessQueue.poll() != null) {
 				removed++;
@@ -1088,22 +1085,16 @@ public class BoundedConcurrentHashMap<K, V> extends AbstractMap<K, V>
 			*     the "count" field after structurally changing any bin.
 			*     The operations must not take any action that could even
 			*     momentarily cause a concurrent read operation to see
-			*     inconsistent data. This is made easier by the nature of
-			*     the read operations in Map. For example, no operation
-			*     can reveal that the table has grown but the threshold
-			*     has not yet been updated, so there are no atomicity
-			*     requirements for this with respect to reads.
+			*     inconsistent data.
 			*
 			* As a guide, all critical volatile reads and writes to the
 			* count field are marked in code comments.
 			*/
 
-		private static final long serialVersionUID = 2249069246763182397L;
-
 		/**
 		 * The number of elements in this segment's region.
 		 */
-		transient volatile int count;
+		volatile int count;
 
 		/**
 		 * Number of updates that alter the size of the table. This is
@@ -1113,52 +1104,23 @@ public class BoundedConcurrentHashMap<K, V> extends AbstractMap<K, V>
 		 * we might have an inconsistent view of state so (usually)
 		 * must retry.
 		 */
-		transient int modCount;
+		int modCount;
 
-		/**
-		 * The table is rehashed when its size exceeds this threshold.
-		 * (The value of this field is always {@code (int)(capacity *
-		 * loadFactor)}.)
-		 */
-		transient int threshold;
-
-		/**
-		 * The per-segment table.
-		 */
-		transient volatile HashEntry<K, V>[] table;
-
-		/**
-		 * The load factor for the hash table.  Even though this value
-		 * is same for all segments, it is replicated to avoid needing
-		 * links to outer object.
-		 *
-		 * @serial
-		 */
-		final float loadFactor;
+		final HashEntry<K, V>[] table;
 
 		final int evictCap;
 
-		transient final EvictionPolicy<K, V> eviction;
+		final EvictionPolicy<K, V> eviction;
 
 		Segment(int cap, int evictCap, float lf, Eviction es) {
-			loadFactor = lf;
 			this.evictCap = evictCap;
 			eviction = es.make( this, evictCap, lf );
-			setTable( HashEntry.newArray( cap ) );
+			table = HashEntry.newArray( cap );
 		}
 
 		@SuppressWarnings("unchecked")
 		private static <K, V> Segment<K, V>[] newArray(int i) {
 			return new Segment[i];
-		}
-
-		/**
-		 * Sets table to new HashEntry array.
-		 * Call only while holding lock or in constructor.
-		 */
-		void setTable(HashEntry<K, V>[] newTable) {
-			threshold = (int) ( newTable.length * loadFactor );
-			table = newTable;
 		}
 
 		/**
@@ -1314,7 +1276,9 @@ public class BoundedConcurrentHashMap<K, V> extends AbstractMap<K, V>
 					oldValue = e.value;
 					if ( !onlyIfAbsent ) {
 						e.value = value;
-						eviction.onEntryHit( e );
+						if ( eviction.onEntryHit( e ) ) {
+							attemptEviction( true );
+						}
 					}
 				}
 				else {
@@ -2022,8 +1986,6 @@ public class BoundedConcurrentHashMap<K, V> extends AbstractMap<K, V>
 	 */
 	final class WriteThroughEntry extends SimpleEntry<K, V> {
 
-		private static final long serialVersionUID = -7041346694785573824L;
-
 		WriteThroughEntry(K k, V v) {
 			super( k, v );
 		}
@@ -2151,68 +2113,6 @@ public class BoundedConcurrentHashMap<K, V> extends AbstractMap<K, V>
 		@Override
 		public void clear() {
 			BoundedConcurrentHashMap.this.clear();
-		}
-	}
-
-	/* ---------------- Serialization Support -------------- */
-
-	/**
-	 * Save the state of the {@code ConcurrentHashMap} instance to a
-	 * stream (i.e., serialize it).
-	 *
-	 * @param s the stream
-	 *
-	 * @serialData the key (Object) and value (Object)
-	 * for each key-value mapping, followed by a null pair.
-	 * The key-value mappings are emitted in no particular order.
-	 */
-	private void writeObject(java.io.ObjectOutputStream s) throws IOException {
-		s.defaultWriteObject();
-
-		for ( int k = 0; k < segments.length; ++k ) {
-			Segment<K, V> seg = segments[k];
-			seg.lock();
-			try {
-				HashEntry<K, V>[] tab = seg.table;
-				for ( int i = 0; i < tab.length; ++i ) {
-					for ( HashEntry<K, V> e = tab[i]; e != null; e = e.next ) {
-						s.writeObject( e.key );
-						s.writeObject( e.value );
-					}
-				}
-			}
-			finally {
-				seg.unlock();
-			}
-		}
-		s.writeObject( null );
-		s.writeObject( null );
-	}
-
-	/**
-	 * Reconstitute the {@code ConcurrentHashMap} instance from a
-	 * stream (i.e., deserialize it).
-	 *
-	 * @param s the stream
-	 */
-	@SuppressWarnings("unchecked")
-	private void readObject(java.io.ObjectInputStream s) throws IOException,
-			ClassNotFoundException {
-		s.defaultReadObject();
-
-		// Initialize each segment to be minimally sized, and let grow.
-		for ( int i = 0; i < segments.length; ++i ) {
-			segments[i].setTable( new HashEntry[1] );
-		}
-
-		// Read the keys and values, and put the mappings in the table
-		for (; ; ) {
-			K key = (K) s.readObject();
-			V value = (V) s.readObject();
-			if ( key == null ) {
-				break;
-			}
-			put( key, value );
 		}
 	}
 }
