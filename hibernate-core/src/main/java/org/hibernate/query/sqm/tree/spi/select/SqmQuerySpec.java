@@ -288,6 +288,19 @@ public class SqmQuerySpec<T> extends SqmQueryPart<T>
 		return (JpaSelection<T>) getSelectClause().resolveJpaSelection();
 	}
 
+	/**
+	 * The single root selected by a criteria query with no explicit selection.
+	 */
+	@Nonnull
+	public SqmRoot<?> getImplicitSelection() {
+		final var roots = fromClause.getRoots();
+		return switch ( roots.size() ) {
+			case 0 -> throw new IllegalArgumentException( "Criteria did not define any query roots" );
+			case 1 -> roots.get( 0 );
+			default -> throw new IllegalArgumentException( "Criteria has multiple query roots" );
+		};
+	}
+
 	@Nonnull
 	@Override
 	public SqmQuerySpec<T> setSelection(@Nonnull JpaSelection<T> selection) {
@@ -644,7 +657,11 @@ public class SqmQuerySpec<T> extends SqmQueryPart<T>
 	@Override
 	public void appendHqlString(@Nonnull StringBuilder hql, @Nonnull SqmRenderContext context) {
 		final var selections = selectClause.getSelections();
-		if ( !selections.isEmpty() ) {
+		if ( selections.isEmpty() && selectClause.isDistinct() ) {
+			hql.append( "select distinct " );
+			getImplicitSelection().appendHqlString( hql, context );
+		}
+		else if ( !selections.isEmpty() ) {
 			hql.append( "select " );
 			if ( selectClause.isDistinct() ) {
 				hql.append( "distinct " );
@@ -655,12 +672,27 @@ public class SqmQuerySpec<T> extends SqmQueryPart<T>
 				selections.get( i ).appendHqlString( hql, context );
 			}
 		}
-		hql.append( " from" );
-		fromClause.appendHqlString( hql, context );
+		final var correlatedJoinPredicates = fromClause.appendHqlFromClause( hql, context );
 		final var wherePredicate = whereClause == null ? null : whereClause.getPredicate();
-		if ( wherePredicate != null ) {
-			hql.append( " where " );
-			wherePredicate.appendHqlString( hql, context );
+		if ( correlatedJoinPredicates.isEmpty() ) {
+			if ( wherePredicate != null ) {
+				hql.append( " where " );
+				wherePredicate.appendHqlString( hql, context );
+			}
+		}
+		else {
+			String separator = " where (";
+			for ( var joinPredicate : correlatedJoinPredicates ) {
+				hql.append( separator );
+				joinPredicate.appendHqlString( hql, context );
+				hql.append( ')' );
+				separator = " and (";
+			}
+			if ( wherePredicate != null ) {
+				hql.append( separator );
+				wherePredicate.appendHqlString( hql, context );
+				hql.append( ')' );
+			}
 		}
 		if ( !groupByClauseExpressions.isEmpty() ) {
 			hql.append( " group by " );
@@ -677,6 +709,26 @@ public class SqmQuerySpec<T> extends SqmQueryPart<T>
 		}
 
 		super.appendHqlString( hql, context );
+	}
+
+	@Override
+	protected void appendHqlString(
+			@Nonnull SqmSortSpecification sortSpecification,
+			@Nonnull StringBuilder hql,
+			@Nonnull SqmRenderContext context) {
+		if ( sortSpecification.isIgnoreCase()
+				&& sortSpecification.getSortExpression() instanceof SqmAliasedNodeRef nodeRef
+				&& nodeRef.getNavigablePath() == null ) {
+			// HQL cannot ignore case when ordering by the position
+			// of a select item, so render the select item itself
+			final var items = selectClause.getSelectionItems();
+			final int position = nodeRef.getPosition();
+			if ( position >= 1 && position <= items.size() ) {
+				sortSpecification.appendHqlString( hql, context, items.get( position - 1 ) );
+				return;
+			}
+		}
+		super.appendHqlString( sortSpecification, hql, context );
 	}
 
 	@Internal

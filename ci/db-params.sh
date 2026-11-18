@@ -15,9 +15,6 @@ if [ "$RDBMS" == "h2" ] || [ "$RDBMS" == "" ]; then
 elif [ "$RDBMS" == "hsqldb" ]; then
   goal="-Pdb=hsqldb"
   dbParam=
-elif [ "$RDBMS" == "hsqldb_2_6" ]; then
-  goal="-Pdb=hsqldb -PdbVersion=${DB_VERSION:-2.6}"
-  dbParam=
 elif [ "$RDBMS" == "mysql" ]; then
   goal="-Pdb=mysql"
   containerName=mysql
@@ -45,8 +42,8 @@ elif [ "$RDBMS" == "gaussdb"  ]; then
 elif [ "$RDBMS" == "edb" ]; then
   goal="-Pdb=edb -DdbHost=localhost:5444"
   containerName=edb
-elif [ "$RDBMS" == "edb_14" ]; then
-  goal="-Pdb=edb -DdbHost=localhost:5444 -PdbVersion=${DB_VERSION:-14}"
+elif [ "$RDBMS" == "edb_15" ]; then
+  goal="-Pdb=edb -DdbHost=localhost:5444 -PdbVersion=${DB_VERSION:-15}"
   containerName=edb
 elif [ "$RDBMS" == "oracle" ]; then
   goal="-Pdb=oracle"

@@ -12,6 +12,7 @@ import org.hibernate.LockMode;
 import org.hibernate.SPI;
 import org.hibernate.boot.spi.SessionFactoryOptions;
 import org.hibernate.dialect.Dialect;
+import org.hibernate.dialect.HSQLDialect;
 import org.hibernate.dialect.function.TimestampaddFunction;
 import org.hibernate.dialect.function.TimestampdiffFunction;
 import org.hibernate.dialect.function.spi.WindowFunctionSupport;
@@ -2388,8 +2389,8 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 				for ( int i = 0; i < selections.size(); i++ ) {
 					visitSelection( i, selections.get( i ) );
 				}
-				sqlSelectClause.makeDistinct( selectClause.isDistinct() );
 			}
+			sqlSelectClause.makeDistinct( selectClause.isDistinct() );
 			return sqlSelectClause;
 		}
 		finally {
@@ -2838,27 +2839,16 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 		final var currentQuerySpec = currentQuerySpec();
 		final var sessionFactory = getSessionFactory();
 		final TableGroup tableGroup;
-		if ( sqmRoot.containsOnlyInnerJoins() ) {
-			// If we have just inner joins against a correlated root, we can render the joins as references
-			// If we correlate a join, we have to create a special SqmRoot shell called SqmCorrelatedRootJoin.
-			// The only purpose of that is to serve as SqmRoot, which is needed for the FROM clause.
-			// It will always contain just a single correlated join though, which is what is actually correlated
-			final SqmFrom<?, ?> from;
-			if ( sqmRoot instanceof SqmCorrelatedRootJoin<?> ) {
-				final var sqmJoins = sqmRoot.getSqmJoins();
-				assert sqmJoins.size() == 1
-					&& sqmJoins.get( 0 ).isCorrelated();
-				from = sqmJoins.get( 0 );
-			}
-			else {
-				from = sqmRoot;
-			}
-			final var parentTableGroup = fromClauseIndex.findTableGroup(
-					from.getCorrelationParent().getNavigablePath()
-			);
-			if ( parentTableGroup == null ) {
-				throw new InterpretationException( null, "Access to from node '" + from.getCorrelationParent() + "' is not possible in from-clause subqueries, unless the 'lateral' keyword is used for the subquery!" );
-			}
+		final SqmFrom<?, ?> from = sqmRoot instanceof SqmCorrelatedRootJoin<?> rootJoin
+				? rootJoin.getCorrelatedJoin()
+				: sqmRoot;
+		final var parentTableGroup = fromClauseIndex.findTableGroup( from.getCorrelationParent().getNavigablePath() );
+		if ( parentTableGroup == null ) {
+			throw new InterpretationException( null, "Access to from node '" + from.getCorrelationParent() + "' is not possible in from-clause subqueries, unless the 'lateral' keyword is used for the subquery!" );
+		}
+		if ( sqmRoot.containsOnlyInnerJoins() || !( from.getNodeType() instanceof EntityDomainType<?> entityType ) ) {
+			// Inner joins can become roots with their predicates in WHERE. A correlation
+			// to a derived row or other non-entity value has no entity root of its own.
 			final var sqlAliasBase = sqlAliasBaseManager.createSqlAliasBase( parentTableGroup.getGroupAlias() );
 			if ( parentTableGroup instanceof PluralTableGroup pluralTableGroup ) {
 				final var correlatedPluralTableGroup = new CorrelatedPluralTableGroup(
@@ -2911,40 +2901,21 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 						sessionFactory
 				);
 			}
-
-			fromClauseIndex.register( from, tableGroup );
-			registerPluralTableGroupParts( tableGroup );
-			// Note that we do not need to register the correlated table group to the from clause
-			// because that is never "rendered" in the subquery anyway.
-			// Any table group joins added to the correlated table group are added to the query spec
-			// as roots anyway, so nothing to worry about
-
-//			LOG.tracef( "Resolved SqmRoot [%s] to correlated TableGroup [%s]", sqmRoot, tableGroup );
-			if ( from instanceof SqmRoot<?> correlatedRoot ) {
-				consumeJoins( correlatedRoot, fromClauseIndex, tableGroup );
-			}
-			else {
-				consumeExplicitJoins( from, tableGroup );
-			}
-			return;
 		}
 		else {
-			final var entityDescriptor = resolveEntityPersister( sqmRoot.getModel() );
-			final var parentTableGroup = fromClauseIndex.findTableGroup(
-					sqmRoot.getCorrelationParent().getNavigablePath()
-			);
+			final var entityDescriptor = resolveEntityPersister( entityType );
 			// If we have non-inner joins against a correlated root, we must render the root with a correlation predicate
 			tableGroup = entityDescriptor.createRootTableGroup(
 					true,
-					sqmRoot.getNavigablePath(),
-					sqmRoot.getExplicitAlias(),
+					from.getNavigablePath(),
+					from.getExplicitAlias(),
 					null,
 					() -> predicate -> {},
 					this
 			);
 			final var identifierMapping = entityDescriptor.getIdentifierMapping();
 			final var navigablePath =
-					sqmRoot.getNavigablePath()
+					from.getNavigablePath()
 							.append( identifierMapping.getNavigableRole().getNavigableName() );
 			final int jdbcTypeCount = identifierMapping.getJdbcTypeCount();
 			if ( jdbcTypeCount == 1 ) {
@@ -2997,14 +2968,16 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 						)
 				);
 			}
+			currentQuerySpec.getFromClause().addRoot( tableGroup );
 		}
-
-//		LOG.tracef( "Resolved SqmRoot [%s] to new TableGroup [%s]", sqmRoot, tableGroup );
-
-		fromClauseIndex.register( sqmRoot, tableGroup );
-		currentQuerySpec.getFromClause().addRoot( tableGroup );
-
-		consumeJoins( sqmRoot, fromClauseIndex, tableGroup );
+		fromClauseIndex.register( from, tableGroup );
+		registerPluralTableGroupParts( tableGroup );
+		if ( from instanceof SqmRoot<?> correlatedRoot ) {
+			consumeJoins( correlatedRoot, fromClauseIndex, tableGroup );
+		}
+		else {
+			consumeExplicitJoins( from, tableGroup );
+		}
 	}
 
 	protected void consumeFromClauseRoot(SqmRoot<?> sqmRoot) {
@@ -3188,11 +3161,6 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 	private static TableGroup getOwnerTableGroup(FromClauseIndex fromClauseIndex, TableGroup tableGroup, SqmJoin<?, ?> join) {
 		if ( join.getLhs() == null ) {
 			return tableGroup;
-		}
-		else if ( join.getLhs() instanceof SqmCorrelation<?, ?> correlation ) {
-			return fromClauseIndex.findTableGroup(
-					correlation.getCorrelatedRoot().getNavigablePath()
-			);
 		}
 		else {
 			return fromClauseIndex.findTableGroup( join.getLhs().getNavigablePath() );
@@ -3494,13 +3462,11 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 //		if ( LOG.isTraceEnabled() ) {
 //			LOG.tracef( "Visiting explicit joins for '%s'", sqmFrom.getNavigablePath() );
 //		}
-		sqmFrom.visitSqmJoins(
-				sqmJoin -> {
-					final TableGroup actualTableGroup = getActualTableGroup( lhsTableGroup, sqmJoin );
-					registerPathAttributeEntityNameUsage( sqmJoin, actualTableGroup );
-					consumeExplicitJoin( sqmJoin, actualTableGroup, actualTableGroup, true );
-				}
-		);
+		for ( var sqmJoin : sqmFrom.getDeclaredJoins() ) {
+			final TableGroup actualTableGroup = getActualTableGroup( lhsTableGroup, sqmJoin );
+			registerPathAttributeEntityNameUsage( sqmJoin, actualTableGroup );
+			consumeExplicitJoin( sqmJoin, actualTableGroup, actualTableGroup, true );
+		}
 		final var sqmTreats = sqmFrom.getSqmTreats();
 		if ( !sqmTreats.isEmpty() ) {
 			final var queryPartProcessingState = getSqlAstQueryPartProcessingState();
@@ -3655,7 +3621,29 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 			}
 		}
 
-		lhsTableGroup.addTableGroupJoin( joinedTableGroupJoin );
+		final boolean correlatedPathJoin = sqmJoin.getLhs().isCorrelated() && !sqmJoin.findRoot().isCorrelated();
+		final boolean crossJoin = correlatedPathJoin && sqmJoinType == SqmJoinType.INNER
+				&& canMoveCorrelationToWhere( sqmJoin );
+		if ( crossJoin ) {
+			lhsTableGroup.addTableGroupJoin( new TableGroupJoin( sqmJoinNavigablePath, SqlAstJoinType.CROSS, joinedTableGroup ) );
+		}
+		else {
+			lhsTableGroup.addTableGroupJoin( joinedTableGroupJoin );
+		}
+
+		if ( correlatedPathJoin && !crossJoin && getDialect() instanceof HSQLDialect ) {
+			// HSQLDB 2.7.4 evaluates this subquery only once if its only outer reference is in ON.
+			// Keep the foreign-key predicate in ON and expose the dependency in WHERE as well.
+			joinedTableGroup.getPrimaryTableReference();
+			final var foreignKeyPredicate = joinedTableGroupJoin.getPredicate();
+			if ( foreignKeyPredicate != null ) {
+				final var alwaysTrue = new CaseSearchedExpression( getBooleanType() );
+				final var trueLiteral = new QueryLiteral<>( true, getBooleanType() );
+				alwaysTrue.when( foreignKeyPredicate, trueLiteral );
+				alwaysTrue.otherwise( trueLiteral );
+				additionalRestrictions = combinePredicates( additionalRestrictions, new BooleanExpressionPredicate( alwaysTrue ) );
+			}
+		}
 
 		registerSqmFromTableGroup( sqmJoin, joinedTableGroup );
 		registerPluralTableGroupParts( joinedTableGroup );
@@ -3696,7 +3684,8 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 					joinedTableGroup,
 					modelPart,
 					joinedTableGroupJoin,
-					sqmJoinType
+					sqmJoinType,
+					lhsTableGroup instanceof CorrelatedTableGroup
 			);
 		}
 		else {
@@ -3715,10 +3704,34 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 			}
 		}
 
+		if ( crossJoin ) {
+			// Initializing a to-one join produces its foreign-key predicate.
+			joinedTableGroup.getPrimaryTableReference();
+			additionalRestrictions = combinePredicates( additionalRestrictions, joinedTableGroupJoin.getPredicate() );
+		}
+
 		if ( transitive ) {
 			consumeExplicitJoins( sqmJoin, joinedTableGroup );
 		}
 		return joinedTableGroup;
+	}
+
+	private static boolean canMoveCorrelationToWhere(SqmAttributeJoin<?, ?> join) {
+		// A later RIGHT or FULL join can supply a null row for this whole join chain.
+		// In that case its correlation must stay in ON.
+		final var orderedJoins = join.findRoot().getOrderedJoins();
+		if ( orderedJoins != null ) {
+			for ( int i = orderedJoins.size() - 1; i >= 0; i-- ) {
+				final var following = orderedJoins.get( i );
+				if ( following == join ) {
+					return true;
+				}
+				if ( following.getSqmJoinType() == SqmJoinType.RIGHT || following.getSqmJoinType() == SqmJoinType.FULL ) {
+					break;
+				}
+			}
+		}
+		return false;
 	}
 
 	private TableGroupJoin getJoinForPredicate(
@@ -3731,7 +3744,8 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 			TableGroup joinedTableGroup,
 			ModelPart modelPart,
 			TableGroupJoin joinedTableGroupJoin,
-			SqmJoinType sqmJoinType) {
+			SqmJoinType sqmJoinType,
+			boolean correlatedOwner) {
 		if ( sqmJoin.isFetched() ) {
 			QUERY_MESSAGE_LOGGER.debugf( "Join fetch [%s] is restricted", sqmJoinNavigablePath );
 		}
@@ -3763,6 +3777,12 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 			// we can safely enforce the treat restriction as an equivalent query predicate.
 			additionalRestrictions = combinePredicates( additionalRestrictions, predicate );
 		}
+		// The join became a root of the subquery, see applyJoinRestriction()
+		else if ( correlatedOwner
+				&& ( joinForPredicate == joinedTableGroupJoin
+						|| !joinForPredicate.getJoinedGroup().isInitialized() ) ) {
+			additionalRestrictions = combinePredicates( additionalRestrictions, predicate );
+		}
 		// If translating the join predicate didn't initialize the table group,
 		// we can safely apply it on the collection table group instead
 		else if ( joinForPredicate.getJoinedGroup().isInitialized() ) {
@@ -3782,6 +3802,23 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 				|| modelPart instanceof PluralAttributeMapping pluralAttributeMapping
 						&& pluralAttributeMapping.getElementDescriptor() instanceof DiscriminatedAssociationModelPart
 				|| sqmJoin.getNodeType() instanceof AnyMappingDomainType<?> );
+	}
+
+	/**
+	 * Apply a restriction to the given join of the given table group.
+	 * <p>
+	 * A join of a correlated table group is added to the subquery as a root, and
+	 * the predicate it has at that point is consumed, so that a predicate applied
+	 * to the join afterwards would be lost. Such a join is always an inner join,
+	 * so the subquery is restricted instead.
+	 */
+	private void applyJoinRestriction(TableGroup lhsTableGroup, TableGroupJoin tableGroupJoin, Predicate predicate) {
+		if ( lhsTableGroup instanceof CorrelatedTableGroup ) {
+			additionalRestrictions = combinePredicates( additionalRestrictions, predicate );
+		}
+		else {
+			tableGroupJoin.applyPredicate( predicate );
+		}
 	}
 
 	private TableGroup consumeCrossJoin(SqmCrossJoin<?, ?> sqmJoin, TableGroup lhsTableGroup, boolean transitive) {
@@ -3833,10 +3870,16 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 				correspondingSqlJoinType,
 				tableGroup
 		);
+		// The auxiliary mapping applies its restriction to the join itself, so apply it
+		// before the join is registered, see applyJoinRestriction()
+		final var auxiliaryMapping = entityDescriptor.getAuxiliaryMapping();
+		if ( auxiliaryMapping != null ) {
+			auxiliaryMapping.applyPredicate( tableGroupJoin, getSqlAliasBaseGenerator(), loadQueryInfluencers );
+		}
 		lhsTableGroup.addTableGroupJoin( tableGroupJoin );
 
 		entityDescriptor.applyBaseRestrictions(
-				tableGroupJoin::applyPredicate,
+				predicate -> applyJoinRestriction( lhsTableGroup, tableGroupJoin, predicate ),
 				tableGroup,
 				true,
 				loadQueryInfluencers.getEnabledFilters(),
@@ -3845,16 +3888,11 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 				this
 		);
 
-		final var auxiliaryMapping = entityDescriptor.getAuxiliaryMapping();
-		if ( auxiliaryMapping != null ) {
-			auxiliaryMapping.applyPredicate( tableGroupJoin, getSqlAliasBaseGenerator(), loadQueryInfluencers );
-		}
-
 		final var joinPredicate = sqmJoin.getJoinPredicate();
 		if ( joinPredicate != null ) {
 			final var oldJoin = currentlyProcessingJoin;
 			currentlyProcessingJoin = sqmJoin;
-			tableGroupJoin.applyPredicate( visitNestedTopLevelPredicate( joinPredicate ) );
+			applyJoinRestriction( lhsTableGroup, tableGroupJoin, visitNestedTopLevelPredicate( joinPredicate ) );
 			currentlyProcessingJoin = oldJoin;
 		}
 		else if ( correspondingSqlJoinType != SqlAstJoinType.CROSS ) {
@@ -3915,7 +3953,8 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 		if ( sqmJoin.getJoinPredicate() != null ) {
 			final var oldJoin = currentlyProcessingJoin;
 			currentlyProcessingJoin = sqmJoin;
-			tableGroupJoin.applyPredicate( visitNestedTopLevelPredicate( sqmJoin.getJoinPredicate() ) );
+			applyJoinRestriction( parentTableGroup, tableGroupJoin,
+					visitNestedTopLevelPredicate( sqmJoin.getJoinPredicate() ) );
 			currentlyProcessingJoin = oldJoin;
 		}
 
@@ -3950,7 +3989,7 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 		if ( joinPredicate != null ) {
 			final var oldJoin = currentlyProcessingJoin;
 			currentlyProcessingJoin = sqmJoin;
-			tableGroupJoin.applyPredicate( visitNestedTopLevelPredicate( joinPredicate ) );
+			applyJoinRestriction( parentTableGroup, tableGroupJoin, visitNestedTopLevelPredicate( joinPredicate ) );
 			currentlyProcessingJoin = oldJoin;
 		}
 
@@ -3982,7 +4021,8 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 		if ( sqmJoin.getJoinPredicate() != null ) {
 			final var oldJoin = currentlyProcessingJoin;
 			currentlyProcessingJoin = sqmJoin;
-			tableGroupJoin.applyPredicate( visitNestedTopLevelPredicate( sqmJoin.getJoinPredicate() ) );
+			applyJoinRestriction( parentTableGroup, tableGroupJoin,
+					visitNestedTopLevelPredicate( sqmJoin.getJoinPredicate() ) );
 			currentlyProcessingJoin = oldJoin;
 		}
 
@@ -7871,6 +7911,15 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 	@Override
 	public Junction visitJunctionPredicate(SqmJunctionPredicate predicate) {
 		final var subpredicates = predicate.getPredicates();
+		if ( subpredicates.isEmpty() ) {
+			final boolean conjunction = predicate.getOperator() == BooleanOperator.AND;
+			final var junction = new Junction(
+					conjunction ? Junction.Nature.CONJUNCTION : Junction.Nature.DISJUNCTION,
+					getBooleanType()
+			);
+			junction.add( new BooleanExpressionPredicate( new QueryLiteral<>( conjunction, getBooleanType() ) ) );
+			return junction;
+		}
 
 		// The AND path is simple - visit all child predicates and collect their
 		// SQL AST forms into a SQL AST CONJUNCTION
@@ -8248,10 +8297,7 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 					: determineValueMapping( left, fromClauseIndex ) );
 		}
 
-		final var sqmOperator =
-				predicate.isNegated()
-						? predicate.getSqmOperator().negated()
-						: predicate.getSqmOperator();
+		final var sqmOperator = predicate.getEffectiveOperator();
 		// Avoid rendering predicate-valued expressions as scalar boolean comparisons.
 		final Predicate booleanExpressionPredicate = toBooleanExpressionPredicate( lhs, sqmOperator, rhs );
 		if ( booleanExpressionPredicate != null ) {

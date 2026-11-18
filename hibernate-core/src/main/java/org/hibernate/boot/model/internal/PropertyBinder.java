@@ -32,6 +32,7 @@ import org.hibernate.MappingException;
 import org.hibernate.annotations.Any;
 import org.hibernate.annotations.AttributeBinderType;
 import org.hibernate.annotations.Audited;
+import org.hibernate.annotations.Cache;
 import org.hibernate.annotations.CompositeType;
 import org.hibernate.annotations.IdGeneratorType;
 import org.hibernate.annotations.Immutable;
@@ -870,6 +871,13 @@ public class PropertyBinder {
 				memberDetails.isPlural()
 						? memberDetails.getType()
 						: inferredData.getClassOrElementType();
+
+		if ( memberDetails.hasDirectAnnotationUsage( Cache.class ) && !isCollection( memberDetails ) ) {
+			// only a collection has a second-level cache of its own
+			throw new AnnotationException( "Property '" + getPath( propertyHolder, inferredData )
+					+ "' is annotated '@Cache' but is not a collection"
+					+ " (only a root entity class or a collection may be annotated '@Cache')" );
+		}
 
 		final var propertyBinder = propertyBinder(
 				propertyHolder,

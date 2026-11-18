@@ -350,11 +350,6 @@ edb() {
     edb_17
 }
 
-edb_14() {
-    compose_down "edb"
-    compose_up "versioned/edb-14/docker-compose.yaml"
-    edb_setup 14
-}
 
 edb_15() {
     compose_down "edb"
@@ -1005,6 +1000,7 @@ SET CLUSTER SETTING jobs.registry.interval.gc = '30s';
 SET CLUSTER SETTING jobs.registry.interval.cancel = '180s';
 SET CLUSTER SETTING jobs.retention_time = '5s';
 SET CLUSTER SETTING sql.stats.automatic_collection.enabled = false;
+SET CLUSTER SETTING sql.txn.repeatable_read_isolation.enabled = true;
 ALTER RANGE default CONFIGURE ZONE USING \"gc.ttlseconds\" = 300;
 ALTER DATABASE system CONFIGURE ZONE USING \"gc.ttlseconds\" = 300;
 quit
@@ -1024,6 +1020,7 @@ SET CLUSTER SETTING jobs.registry.interval.gc = '30s';
 SET CLUSTER SETTING jobs.registry.interval.cancel = '180s';
 SET CLUSTER SETTING jobs.retention_time = '5s';
 SET CLUSTER SETTING sql.stats.automatic_collection.enabled = false;
+SET CLUSTER SETTING sql.txn.repeatable_read_isolation.enabled = true;
 SET CLUSTER SETTING kv.range_split.by_load_merge_delay = '5s';
 SET CLUSTER SETTING sql.defaults.serial_normalization = 'sql_sequence_cached';
 ALTER RANGE default CONFIGURE ZONE USING \"gc.ttlseconds\" = 300;
@@ -1238,7 +1235,6 @@ if [ -z ${1} ]; then
     echo -e "\tedb_17"
     echo -e "\tedb_16"
     echo -e "\tedb_15"
-    echo -e "\tedb_14"
     echo -e "\thana"
     echo -e "\tmariadb"
     echo -e "\tmariadb_verylatest"
