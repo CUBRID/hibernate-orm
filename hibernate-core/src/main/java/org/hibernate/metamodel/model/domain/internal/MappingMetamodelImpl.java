@@ -1,8 +1,10 @@
 package org.hibernate.metamodel.model.domain.internal;
 
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -12,6 +14,7 @@ import java.util.function.Function;
 
 import jakarta.annotation.Nonnull;
 import jakarta.annotation.Nullable;
+
 import org.hibernate.EntityNameResolver;
 import org.hibernate.HibernateException;
 import org.hibernate.UnknownEntityTypeException;
@@ -157,8 +160,21 @@ public class MappingMetamodelImpl
 				persisterFactory,
 				context
 		);
-		entityPersisters = entityPersisterMap.values().toArray( EntityPersister[]::new );
-		entityNames = entityPersisterMap.keySet().toArray( String[]::new );
+
+		final List<EntityPersister> list = new ArrayList<>();
+		final List<String> result = new ArrayList<>();
+		for ( var entry : entityPersisterMap.entrySet() ) {
+			// skip the extra entries registered under the class name
+			final var entityPersister = entry.getValue();
+			final String entityName = entityPersister.getEntityName();
+			if ( entry.getKey().equals( entityName ) ) {
+				list.add( entityPersister );
+				result.add( entityName );
+			}
+		}
+		entityPersisters = list.toArray( EntityPersister[]::new );
+		entityNames = result.toArray( String[]::new );
+
 		processBootCollections(
 				bootModel.getCollectionBindings(),
 				cache,
@@ -180,7 +196,9 @@ public class MappingMetamodelImpl
 		//		- building insert and update generation delegates
 		for ( var persister : entityPersisters ) {
 			persister.initializeCacheRestrictions( bootModel );
-			persister.postInstantiate( bootModel.getEntityBinding( persister.getEntityName() ) );
+			final var binding = bootModel.getEntityBinding( persister.getEntityName() );
+			assert binding != null;
+			persister.postInstantiate( binding );
 			registerEntityNameResolvers( persister, entityNameResolvers );
 		}
 
@@ -662,21 +680,25 @@ public class MappingMetamodelImpl
 	}
 
 	@Override
-	public Set<String> getCollectionRolesByEntityParticipant(String entityName) {
+	@Nullable
+	public Set<String> getCollectionRolesByEntityParticipant(@Nonnull String entityName) {
 		return collectionRolesByEntityParticipant.get( entityName );
 	}
 
 	@Override
+	@Nonnull
 	public java.util.Collection<EntityNameResolver> getEntityNameResolvers() {
 		return entityNameResolvers;
 	}
 
 	@Override
+	@Nonnull
 	public String[] getAllEntityNames() {
 		return entityNames;
 	}
 
 	@Override
+	@Nonnull
 	public String[] getAllCollectionRoles() {
 		return toStringArray( collectionPersisterMap.keySet() );
 	}

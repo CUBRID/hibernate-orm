@@ -68,6 +68,14 @@ The deprecated `PersistenceContext.reentrantSafeEntityEntries()` method has been
 
 This section describes changes in behavior that applications should be aware of.
 
+[[timezone-storage-property-access]]
+=== Timezone column storage with property access
+
+`@TimeZoneStorage(COLUMN)` on property-access attributes now maps and persists both the temporal value and UTC offset.
+Previously, these columns could be omitted and values silently lost for `OffsetDateTime`, `OffsetTime`, and `ZonedDateTime`.
+Applications affected by this bug must ensure the required columns exist before upgrading.
+Values that were never stored by earlier versions cannot be recovered automatically.
+
 [[oracle-nested-xml-nulls]]
 === Oracle nested XML null extraction
 
@@ -115,6 +123,20 @@ Such mappings must use `@AttributeOverride` to specify the column mapped by each
 A `@Cache` annotation on a field or property which is not a collection, for example, on a `@ManyToOne` association,
 is now rejected with an `AnnotationException` when the metadata is built. Previously the annotation was silently ignored.
 To cache the entity which is the target of an association, annotate its root entity class `@Cache`.
+
+[[table-on-abstract-table-per-class-entity]]
+=== `@Table` on an abstract entity class in a `TABLE_PER_CLASS` hierarchy
+
+In a `TABLE_PER_CLASS` hierarchy, an abstract entity class with entity subclasses is not mapped to a table.
+A `@Table` annotation on such a class is now rejected with an `AnnotationException` when the metadata is built.
+Previously the annotation was silently ignored, along with any indexes or constraints it declared.
+Indexes and constraints should instead be declared by the `@Table` annotation of each concrete subclass.
+
+[[on-delete-on-entity-class]]
+=== `@OnDelete` on an entity class which is not a `JOINED` subclass
+
+An `@OnDelete` annotation on an entity class which is not a subclass in a `JOINED` hierarchy is now rejected with
+an `AnnotationException` when the metadata is built. Previously the annotation was silently ignored.
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // XSD changes

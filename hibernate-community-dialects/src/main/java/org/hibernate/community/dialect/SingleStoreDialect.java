@@ -234,7 +234,6 @@ public class SingleStoreDialect extends Dialect implements CurrentTemporalSuppor
 	@Override public TypeSizingProfile getTypeSizingProfile() { return typeSizingProfile; }
 
 	private static final int PARAM_LIST_SIZE_LIMIT = 1_048_576;
-	private static final String[] NO_COMMANDS = new String[0];
 	private static final EmptyExporter NOOP_EXPORTER = new EmptyExporter();
 	private static final UniqueDelegate NOOP_UNIQUE_DELEGATE = UniqueDelegates.none();
 	private static final DatabaseVersion MINIMUM_VERSION = DatabaseVersion.make( 8, 0 );
@@ -904,6 +903,13 @@ public class SingleStoreDialect extends Dialect implements CurrentTemporalSuppor
 	@SPI({ USE, IMPLEMENT })
 	public void appendLiteral(SqlAppender appender, String literal) {
 		appender.appendSql( '\'' );
+		appendLiteralContent( appender, literal );
+		appender.appendSql( '\'' );
+	}
+
+	@Override
+	@SPI({ USE, IMPLEMENT })
+	public void appendLiteralContent(SqlAppender appender, String literal) {
 		for ( int i = 0; i < literal.length(); i++ ) {
 			final char c = literal.charAt( i );
 			if ( c == '\'' ) {
@@ -914,7 +920,6 @@ public class SingleStoreDialect extends Dialect implements CurrentTemporalSuppor
 			}
 			appender.appendSql( c );
 		}
-		appender.appendSql( '\'' );
 	}
 
 	@Override

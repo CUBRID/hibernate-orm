@@ -841,6 +841,11 @@ public class EntityBinder {
 		}
 
 		if ( inheritanceState.hasTable() ) {
+			if ( tableAnnotation != null && isAbstractUnionTable( inheritanceState ) ) {
+				throw new AnnotationException( "Entity '" + annotatedClass.getName()
+						+ "' is an abstract class with subclasses in a 'TABLE_PER_CLASS' hierarchy and may not be annotated '@Table'"
+						+ " (it is not mapped to a table, and each concrete subclass declares its own table mapping)" );
+			}
 			createTable( inheritanceState, superEntity, schema, table, catalog, uniqueConstraints );
 		}
 		else {
@@ -965,9 +970,21 @@ public class EntityBinder {
 		}
 	}
 
+	/**
+	 * An abstract entity class with entity subclasses in a
+	 * {@code TABLE_PER_CLASS} hierarchy is not mapped to a
+	 * physical table.
+	 *
+	 * @see org.hibernate.mapping.Table#isAbstractUnionTable()
+	 */
+	private boolean isAbstractUnionTable(InheritanceState inheritanceState) {
+		return inheritanceState.getType() == InheritanceType.TABLE_PER_CLASS
+			&& inheritanceState.hasSiblings()
+			&& annotatedClass.isAbstract();
+	}
+
 	private void checkNoOnDelete(ClassDetails annotatedClass) {
-		if ( annotatedClass.hasAnnotationUsage( PrimaryKeyJoinColumns.class, modelsContext() )
-				|| annotatedClass.hasAnnotationUsage( PrimaryKeyJoinColumn.class, modelsContext() ) ) {
+		if ( annotatedClass.hasAnnotationUsage( OnDelete.class, modelsContext() ) ) {
 			throw new AnnotationException( "Entity class '" + annotatedClass.getName() + "' may not be annotated '@OnDelete'" );
 		}
 	}

@@ -34,14 +34,21 @@ public class DefaultDirtyCheckEventListener implements DirtyCheckEventListener {
 	public void onDirtyCheck(@Nonnull DirtyCheckEvent event) {
 		final var session = event.getSession();
 		final var persistenceContext = session.getPersistenceContextInternal();
-		for ( var holder : persistenceContext.getEntityHoldersByKey().values() ) {
+
+		// A getter may trigger lazy loading, so we must be safe from reentrancy.
+		final var holders =
+				persistenceContext.getEntityHoldersByKey()
+						.values().toArray( EntityHolder[]::new );
+		for ( var holder : holders ) {
 			if ( isEntityDirty( holder, session ) ) {
 				event.setDirty( true );
 				return;
 			}
 		}
+
 		final var entriesByCollection = persistenceContext.getCollectionEntries();
 		if ( entriesByCollection != null ) {
+			// Collections loaded by element getters must also be checked.
 			for ( var entry : entriesByCollection.entrySet() ) {
 				if ( isCollectionDirty( entry.getKey(), entry.getValue().getLoadedPersister() ) ) {
 					event.setDirty( true );
