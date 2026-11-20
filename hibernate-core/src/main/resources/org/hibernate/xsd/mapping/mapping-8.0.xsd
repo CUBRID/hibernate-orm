@@ -730,11 +730,12 @@
                 <xsd:element name="enumerated" type="orm:enumerated" minOccurs="0"/>
                 <xsd:element name="convert" type="orm:convert" minOccurs="0"/>
                 <xsd:element name="nationalized" type="orm:nationalized" minOccurs="0"/>
-
-                <xsd:element name="generated" minOccurs="0" type="orm:basic-generation-timing-type"/>
-
-                <xsd:group ref="orm:basic-type-group" />
             </xsd:choice>
+
+            <xsd:element name="generated" minOccurs="0" type="orm:basic-generation-timing-type"/>
+
+            <xsd:group ref="orm:basic-type-group" />
+
             <xsd:element name="update-timestamp" type="orm:update-timestamp" minOccurs="0"/>
             <xsd:element name="exclude-from-versioning" type="orm:emptyType"
                          minOccurs="0"/>
@@ -2010,7 +2011,7 @@
         <xsd:sequence>
             <xsd:choice>
                 <xsd:sequence>
-                    <xsd:choice>
+                    <xsd:sequence>
                         <xsd:sequence>
                             <xsd:sequence>
                                 <xsd:choice maxOccurs="unbounded">
@@ -2020,8 +2021,8 @@
                             </xsd:sequence>
                             <xsd:element name="foreign-key" type="orm:foreign-key" minOccurs="0"/>
                         </xsd:sequence>
-                        <xsd:element name="property-ref" type="orm:property-ref"/>
-                    </xsd:choice>
+                        <xsd:element name="property-ref" type="orm:property-ref" minOccurs="0"/>
+                    </xsd:sequence>
                 </xsd:sequence>
                 <xsd:element name="join-table" type="orm:join-table" minOccurs="0"/>
             </xsd:choice>
