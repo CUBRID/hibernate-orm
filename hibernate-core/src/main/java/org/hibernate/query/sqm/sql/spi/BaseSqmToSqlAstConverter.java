@@ -1209,7 +1209,6 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 						)
 				)
 		);
-		currentClauseStack.push( Clause.INSERT );
 		final InsertSelectStatement insertStatement;
 		final AdditionalInsertValues additionalInsertValues;
 		try {
@@ -1244,7 +1243,6 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 		}
 		finally {
 			popProcessingStateStack();
-			currentClauseStack.pop();
 		}
 
 		insertStatement.setSourceSelectStatement(
@@ -1427,18 +1425,24 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 			versionAttributeName = null;
 			needsVersionInsert = false;
 		}
-		// Go through all target paths and remember if the target paths contain the version or id attributes
-		for ( int i = 0; i < targetPaths.size(); i++ ) {
-			final var path = targetPaths.get( i );
-			final String localName = path.getNavigablePath().getLocalName();
-			if ( localName.equals( identifierPropertyName ) ) {
-				identifierGenerator = null;
+		currentClauseStack.push( Clause.INSERT );
+		try {
+			// Go through all target paths and remember if the target paths contain the version or id attributes
+			for ( int i = 0; i < targetPaths.size(); i++ ) {
+				final var path = targetPaths.get( i );
+				final String localName = path.getNavigablePath().getLocalName();
+				if ( localName.equals( identifierPropertyName ) ) {
+					identifierGenerator = null;
+				}
+				else if ( localName.equals( versionAttributeName ) ) {
+					needsVersionInsert = false;
+				}
+				final var assignable = (Assignable) visitWithRequiredResult( path );
+				targetColumnReferenceConsumer.accept( assignable, assignable.getColumnReferences() );
 			}
-			else if ( localName.equals( versionAttributeName ) ) {
-				needsVersionInsert = false;
-			}
-			final var assignable = (Assignable) visitWithRequiredResult( path );
-			targetColumnReferenceConsumer.accept( assignable, assignable.getColumnReferences() );
+		}
+		finally {
+			currentClauseStack.pop();
 		}
 		if ( needsVersionInsert ) {
 			final var versionPath = BasicValuedPathInterpretation.from(
@@ -5077,15 +5081,7 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 					this
 			);
 
-			pluralAttributeMapping.applyBaseRestrictions(
-					subQuerySpec::applyPredicate,
-					tableGroup,
-					true,
-					getLoadQueryInfluencers().getEnabledFilters(),
-					false,
-					null,
-					this
-			);
+			applyPluralAttributeRestrictions( pluralAttributeMapping, tableGroup, subQuerySpec );
 
 			getFromClauseAccess().registerTableGroup( navigablePath, tableGroup );
 			registerPluralTableGroupParts( tableGroup );
@@ -5115,6 +5111,43 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 			popProcessingStateStack();
 		}
 		return new SelectStatement( subQuerySpec );
+	}
+
+	/**
+	 * Applies the restrictions which a join of the given collection is subject to
+	 * to a subquery whose root is the collection.
+	 *
+	 * @see PluralAttributeMapping#createTableGroupJoin
+	 */
+	private void applyPluralAttributeRestrictions(
+			PluralAttributeMapping pluralAttributeMapping,
+			TableGroup tableGroup,
+			QuerySpec subQuerySpec) {
+		final var influencers = getLoadQueryInfluencers();
+		final var enabledFilters = influencers.getEnabledFilters();
+		pluralAttributeMapping.applyBaseRestrictions(
+				subQuerySpec::applyPredicate,
+				tableGroup,
+				true,
+				enabledFilters,
+				false,
+				null,
+				this
+		);
+		pluralAttributeMapping.applyBaseManyToManyRestrictions(
+				subQuerySpec::applyPredicate,
+				tableGroup,
+				true,
+				enabledFilters,
+				null,
+				this
+		);
+		pluralAttributeMapping.applyAuxiliaryRestrictions(
+				tableGroup,
+				subQuerySpec::applyPredicate,
+				influencers,
+				getSqlAliasBaseGenerator()
+		);
 	}
 
 	@Override
@@ -5229,15 +5262,7 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 					this
 			);
 
-			pluralAttributeMapping.applyBaseRestrictions(
-					subQuerySpec::applyPredicate,
-					tableGroup,
-					true,
-					getLoadQueryInfluencers().getEnabledFilters(),
-					false,
-					null,
-					this
-			);
+			applyPluralAttributeRestrictions( pluralAttributeMapping, tableGroup, subQuerySpec );
 
 			getFromClauseAccess().registerTableGroup( pluralPartPath.getNavigablePath(), tableGroup );
 			registerPluralTableGroupParts( tableGroup );
@@ -5344,14 +5369,16 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 		}
 		final int jdbcTypeCount = modelPart.getJdbcTypeCount();
 		final String pathName = functionName + ( index ? "_index" : "_element" );
-		final String identifierVariable =
-				parentTableGroup.getPrimaryTableReference().getIdentificationVariable()
-						+ "_" + pathName;
-		final var queryPath =
-				new NavigablePath( parentTableGroup.getNavigablePath(),
-						pathName, identifierVariable );
+		// The path of the plural part is specific to the collection and to the function,
+		// so each collection of the parent gets a lateral join of its own
+		final var queryPath = pluralPartPath.getNavigablePath().append( pathName );
 		TableGroup lateralTableGroup = parentFromClauseAccess.findTableGroup( queryPath );
 		if ( lateralTableGroup == null ) {
+			final String identifierVariable =
+					getSqlAliasBaseGenerator()
+							.createSqlAliasBase( pluralAttributeMapping.getSqlAliasStem() )
+							.generateNewAlias()
+							+ "_" + pathName;
 			final var subQuerySpec = new QuerySpec( false );
 			pushProcessingState(
 					new SqlAstQueryPartProcessingStateImpl(
@@ -5372,15 +5399,7 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 						this
 				);
 
-				pluralAttributeMapping.applyBaseRestrictions(
-						subQuerySpec::applyPredicate,
-						tableGroup,
-						true,
-						getLoadQueryInfluencers().getEnabledFilters(),
-						false,
-						null,
-						this
-				);
+				applyPluralAttributeRestrictions( pluralAttributeMapping, tableGroup, subQuerySpec );
 
 				getFromClauseAccess().registerTableGroup( pluralPartPath.getNavigablePath(), tableGroup );
 				registerPluralTableGroupParts( tableGroup );
@@ -5548,6 +5567,7 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 		final var tableReference =
 				(QueryPartTableReference)
 						lateralTableGroup.getPrimaryTableReference();
+		final String identifierVariable = tableReference.getIdentificationVariable();
 		if ( jdbcTypeCount == 1 ) {
 			final var sqlSelections =
 					tableReference.getQueryPart().getFirstQuerySpec()
@@ -8196,15 +8216,7 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 					this
 			);
 
-			pluralAttributeMapping.applyBaseRestrictions(
-					subQuerySpec::applyPredicate,
-					tableGroup,
-					true,
-					getLoadQueryInfluencers().getEnabledFilters(),
-					false,
-					null,
-					this
-			);
+			applyPluralAttributeRestrictions( pluralAttributeMapping, tableGroup, subQuerySpec );
 
 			getFromClauseAccess().registerTableGroup( pluralPath.getNavigablePath(), tableGroup );
 			registerPluralTableGroupParts( tableGroup );
