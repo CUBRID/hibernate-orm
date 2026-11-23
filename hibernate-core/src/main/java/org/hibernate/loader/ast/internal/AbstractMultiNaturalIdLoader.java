@@ -6,7 +6,6 @@ import jakarta.annotation.Nullable;
 
 import org.hibernate.FindMultipleOption;
 import org.hibernate.LockOptions;
-import org.hibernate.engine.spi.EntityKey;
 import org.hibernate.engine.spi.PersistenceContext;
 import org.hibernate.engine.spi.SharedSessionContractImplementor;
 import org.hibernate.loader.ast.spi.MultiNaturalIdLoadOptions;
@@ -16,6 +15,7 @@ import org.hibernate.metamodel.mapping.EntityMappingType;
 import java.util.List;
 import java.util.function.Consumer;
 
+import static org.hibernate.metamodel.mapping.internal.CurrentState.loadByKey;
 import static java.util.Collections.emptyList;
 import static org.hibernate.internal.util.collections.CollectionHelper.arrayList;
 import static org.hibernate.internal.util.collections.CollectionHelper.isEmpty;
@@ -35,6 +35,10 @@ public abstract class AbstractMultiNaturalIdLoader<E> implements MultiNaturalIdL
 	@Nonnull
 	@Override
 	public <K> List<E> multiLoad(@Nonnull K[] naturalIds, @Nonnull MultiNaturalIdLoadOptions options, @Nonnull SharedSessionContractImplementor session) {
+		return loadByKey( entityDescriptor, session, () -> loadNaturalIds( naturalIds, options, session ) );
+	}
+
+	private <K> List<E> loadNaturalIds(@Nonnull K[] naturalIds, @Nonnull MultiNaturalIdLoadOptions options, @Nonnull SharedSessionContractImplementor session) {
 		assert naturalIds != null;
 		if ( naturalIds.length == 0 ) {
 			return emptyList();
@@ -140,7 +144,8 @@ public abstract class AbstractMultiNaturalIdLoader<E> implements MultiNaturalIdL
 		final var descriptor = getEntityDescriptor();
 		final Object id = context.getNaturalIdResolutions().findCachedIdByNaturalId( naturalId, descriptor );
 		// id can be null if a non-existent natural id is requested, or a mutable natural id was changed and then deleted
-		return id == null ? null : context.getEntity( new EntityKey( id, descriptor.getEntityPersister() ) );
+		return id == null ? null
+				: context.getEntity( context.getSession().generateEntityKey( id, descriptor.getEntityPersister() ) );
 	}
 
 	@Nonnull

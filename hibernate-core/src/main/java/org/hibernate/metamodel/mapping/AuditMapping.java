@@ -6,6 +6,7 @@ import java.util.List;
 
 import org.hibernate.Incubating;
 import org.hibernate.audit.spi.AuditEntityLoader;
+import org.hibernate.engine.spi.LoadQueryInfluencers;
 import org.hibernate.sql.ast.spi.creation.SqlAliasBaseGenerator;
 import org.hibernate.sql.ast.spi.query.expression.Expression;
 import org.hibernate.sql.ast.spi.query.from.TableGroupProducer;
@@ -23,6 +24,18 @@ import jakarta.annotation.Nullable;
  */
 @Incubating(since = "5.4")
 public interface AuditMapping extends AuxiliaryMapping {
+
+	@Override
+	@Nonnull
+	default SelectableMapping getVersionStart(@Nonnull String originalTableName, @Nonnull LoadQueryInfluencers influencers) {
+		return getChangesetIdMapping( originalTableName );
+	}
+
+	@Override
+	default boolean requiresSeparateMembershipTable(@Nonnull LoadQueryInfluencers influencers) {
+		// Historical membership is recorded in the collection audit table.
+		return useAuxiliaryTable( influencers );
+	}
 
 	/**
 	 * Get the changeset ID selectable mapping for the given original table.
@@ -43,6 +56,11 @@ public interface AuditMapping extends AuxiliaryMapping {
 	 */
 	@Nullable
 	SelectableMapping getInvalidatingChangesetIdMapping(@Nonnull String originalTableName);
+
+	/** Columns of this entity table written by audited inverse collections. */
+	default List<SelectableMapping> getCollectionIndexColumns(String originalTableName) {
+		return List.of();
+	}
 
 	/**
 	 * Get the entity loader for single-entity audit queries.

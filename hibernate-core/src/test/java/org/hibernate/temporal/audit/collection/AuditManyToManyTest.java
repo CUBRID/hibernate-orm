@@ -6,10 +6,14 @@ import jakarta.persistence.ManyToMany;
 import org.hibernate.annotations.Audited;
 import org.hibernate.audit.AuditLog;
 import org.hibernate.audit.AuditLogFactory;
+import org.hibernate.audit.ModificationType;
 import org.hibernate.cfg.StateManagementSettings;
+import org.hibernate.Hibernate;
 import org.hibernate.SharedSessionContract;
 import org.hibernate.temporal.spi.ChangesetIdentifierSupplier;
+import org.hibernate.testing.orm.junit.DialectFeatureChecks;
 import org.hibernate.testing.orm.junit.DomainModel;
+import org.hibernate.testing.orm.junit.RequiresDialectFeature;
 import org.hibernate.testing.orm.junit.ServiceRegistry;
 import org.hibernate.testing.orm.junit.AuditedTest;
 import org.hibernate.testing.orm.junit.BeforeClassTemplate;
@@ -127,6 +131,18 @@ class AuditManyToManyTest {
 			student.courses.add( c3 );
 		} );
 		revRecReplace = currentTxId;
+
+		// One course version starts during the enrollment, another starts after it ends.
+		sf.inTransaction( session -> {
+			var course = new Course( 60L, "Original" );
+			session.persist( course );
+			var student = new Student( 60L, "Charlie" );
+			student.courses.add( course );
+			session.persist( student );
+		} );
+		sf.inTransaction( session -> session.find( Course.class, 60L ).name = "During enrollment" );
+		sf.inTransaction( session -> session.find( Student.class, 60L ).courses.clear() );
+		sf.inTransaction( session -> session.find( Course.class, 60L ).name = "After withdrawal" );
 	}
 
 	// --- Write side verification ---
@@ -171,6 +187,85 @@ class AuditManyToManyTest {
 			assertNotNull( student );
 			assertEquals( 1, student.courses.size(), "At revDrop, student should have 1 course" );
 			assertEquals( "Physics", student.courses.get( 0 ).name );
+		}
+	}
+
+	@Test
+	void testLeftJoinAtChangeset(SessionFactoryScope scope) {
+		try (var session = scope.getSessionFactory().withOptions().atChangeset( revDrop ).openSession()) {
+			assertEquals( List.of( 2L ), session.createSelectionQuery(
+					"select c.id from Student s left join s.courses c where s.id = 1", Long.class )
+					.getResultList() );
+			assertEquals( List.of( "Physics" ), session.createSelectionQuery(
+					"select c.name from Student s left join s.courses c where s.id = 1", String.class )
+					.getResultList() );
+		}
+	}
+
+	@Test
+	void testRightJoinAtOwnerRevision(SessionFactoryScope scope) {
+		try (var session = scope.getSessionFactory().withOptions().atChangeset( AuditLog.ALL_CHANGESETS ).openSession()) {
+			assertEquals( List.of( "Math" ), session.createSelectionQuery(
+					"select c.name from Student s right join s.courses c where s.id = 1 and changesetId(s) = :revision",
+					String.class ).setParameter( "revision", revCreate ).list() );
+		}
+	}
+
+	@Test
+	void testAuditColumnsOfJoinedCourse(SessionFactoryScope scope) {
+		// The course predates both this student and the membership row.
+		scope.inTransaction( session -> {
+			var student = new Student( 30L, "Bob" );
+			student.courses.add( session.find( Course.class, 1L ) );
+			session.persist( student );
+		} );
+		try (var session = scope.getSessionFactory().withOptions().atChangeset( AuditLog.ALL_CHANGESETS ).openSession()) {
+			assertEquals( List.of( revCreate ), session.createSelectionQuery(
+					"select changesetId(c) from Student s join s.courses c where s.id = 30 and modificationType(c) = :type",
+					Integer.class ).setParameter( "type", ModificationType.ADD ).list() );
+		}
+	}
+
+	@Test
+	void testRightJoinExcludesDeletedMembership(SessionFactoryScope scope) {
+		assertNoDeletedMembership( scope, "right" );
+	}
+
+	@Test
+	@RequiresDialectFeature(feature = DialectFeatureChecks.SupportsFullJoin.class)
+	void testFullJoinExcludesDeletedMembership(SessionFactoryScope scope) {
+		assertNoDeletedMembership( scope, "full" );
+	}
+
+	private static void assertNoDeletedMembership(SessionFactoryScope scope, String joinType) {
+		try (var session = scope.getSessionFactory().withOptions().atChangeset( AuditLog.ALL_CHANGESETS ).openSession()) {
+			// The right operand contains only versions that coexisted with the membership.
+			// No student revision falls during the second course version, so it survives with a null owner.
+			assertEquals( List.of( "During enrollment" ), session.createSelectionQuery(
+					"select c.name from Student s " + joinType + " join s.courses c where s.id is null and c.id = 60",
+					String.class ).list() );
+			// The Math membership was removed at revDrop. Its deletion row must not survive as an orphan.
+			assertEquals( List.of(), session.createSelectionQuery(
+					"select c.id from Student s " + joinType + " join s.courses c where s.id is null and c.id = 1",
+					Long.class ).list() );
+		}
+	}
+
+	@Test
+	void testSizeAtEachChangeset(SessionFactoryScope scope) {
+		try (var session = scope.getSessionFactory().withOptions().atChangeset( AuditLog.ALL_CHANGESETS ).openSession()) {
+			final var revisions = session.createSelectionQuery(
+					"select s, size(s.courses) from Student s where s.id = 1 order by changesetId(s)", Object[].class )
+					.getResultList();
+			assertEquals( 4, revisions.size() );
+			for ( var revision : revisions ) {
+				final var student = (Student) revision[0];
+				assertEquals( revision[1], Hibernate.size( student.courses ) );
+				Hibernate.initialize( student.courses );
+				assertEquals( revision[1], student.courses.size() );
+			}
+			assertEquals( List.of( 2, 2 ), session.createSelectionQuery(
+					"select size(s.courses) from Student s where s.id = 10", Integer.class ).getResultList() );
 		}
 	}
 
@@ -251,6 +346,31 @@ class AuditManyToManyTest {
 			// Verify contents
 			assertEquals( 2, studentWith2.courses.size() );
 			assertEquals( 1, studentWith1.courses.size() );
+		}
+	}
+
+	@Test
+	@Order(6)
+	void testJoinFetchedCollectionRevisionIsolation(SessionFactoryScope scope) {
+		final var sf = scope.getSessionFactory();
+		final List<Integer> lazySizes;
+		try (var s = sf.withOptions().atChangeset( AuditLog.ALL_CHANGESETS ).openSession()) {
+			lazySizes = s.createSelectionQuery( "from Student s where s.id = :id order by changesetId(s)", Student.class )
+					.setParameter( "id", 1L )
+					.getResultList()
+					.stream().map( st -> st.courses.size() ).toList();
+		}
+		try (var s = sf.withOptions().atChangeset( AuditLog.ALL_CHANGESETS ).openSession()) {
+			// each revision fetches the collection as of that revision, like the lazy load
+			var students = s.createSelectionQuery(
+							"from Student s left join fetch s.courses where s.id = :id order by changesetId(s)",
+							Student.class )
+					.setParameter( "id", 1L )
+					.getResultList();
+			assertEquals( 4, students.size(), "Expected 4 revisions including DEL" );
+			final var fetchedSizes = students.stream().map( st -> st.courses.size() ).toList();
+			assertEquals( List.of( 1, 2, 1 ), fetchedSizes.subList( 0, 3 ) );
+			assertEquals( lazySizes, fetchedSizes );
 		}
 	}
 

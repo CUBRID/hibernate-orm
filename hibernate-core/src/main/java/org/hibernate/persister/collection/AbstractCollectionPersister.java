@@ -30,6 +30,7 @@ import org.hibernate.cache.spi.entry.UnstructuredCacheEntry;
 import org.hibernate.collection.spi.CollectionSemantics;
 import org.hibernate.collection.spi.PersistentCollection;
 import org.hibernate.dialect.Dialect;
+import org.hibernate.engine.jdbc.mutation.JdbcValueBindings;
 import org.hibernate.engine.jdbc.mutation.ParameterUsage;
 import org.hibernate.engine.jdbc.mutation.internal.MutationQueryOptions;
 import org.hibernate.engine.jdbc.spi.SqlExceptionHelper;
@@ -45,6 +46,8 @@ import org.hibernate.loader.ast.internal.CollectionElementLoaderByIndex;
 import org.hibernate.loader.ast.internal.CollectionLoaderNamedQuery;
 import org.hibernate.loader.ast.internal.CollectionLoaderSingleKey;
 import org.hibernate.loader.ast.internal.CollectionLoaderSubSelectFetch;
+import org.hibernate.loader.ast.internal.CollectionLookupLoader;
+import org.hibernate.loader.ast.internal.CollectionLookupLoader.Operation;
 import org.hibernate.loader.ast.internal.LoaderSqlAstCreationState;
 import org.hibernate.loader.ast.spi.BatchLoaderFactory;
 import org.hibernate.loader.ast.spi.CollectionLoader;
@@ -121,6 +124,7 @@ import org.hibernate.type.Type;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -128,6 +132,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.StringTokenizer;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.function.UnaryOperator;
 
@@ -139,6 +144,7 @@ import static org.hibernate.internal.util.StringHelper.replace;
 import static org.hibernate.internal.util.StringHelper.unqualify;
 import static org.hibernate.internal.util.collections.CollectionHelper.arrayList;
 import static org.hibernate.jdbc.Expectations.createExpectation;
+import static org.hibernate.metamodel.mapping.internal.CurrentState.hasHistory;
 import static org.hibernate.metamodel.mapping.internal.MappingModelCreationHelper.getTableIdentifierExpression;
 import static org.hibernate.pretty.MessageHelper.collectionInfoString;
 import static org.hibernate.sql.Template.renderWhereStringTemplate;
@@ -162,6 +168,10 @@ public abstract class AbstractCollectionPersister
 	private final CollectionSemantics<?,?> collectionSemantics;
 	private final EntityPersister ownerPersister;
 	private final SessionFactoryImplementor factory;
+
+	private final Map<Operation, CollectionLookupLoader> lookupLoaders = new ConcurrentHashMap<>();
+	private final EnumSet<Operation> customLookupSql = EnumSet.noneOf( Operation.class );
+	private boolean hasStaticRowRestrictions;
 
 	protected final String qualifiedTableName;
 	private final CollectionTableMapping tableMapping;
@@ -681,6 +691,19 @@ public abstract class AbstractCollectionPersister
 		sqlSelectSizeString = generateSelectSizeString( hasIndex() && !isMap() );
 		sqlDetectRowByIndexString = generateDetectRowByIndexString();
 		sqlDetectRowByElementString = generateDetectRowByElementString();
+		// An explicit SQL override owns this operation, including its parameter contract.
+		if ( getClass() != BasicCollectionPersister.class && getClass() != OneToManyPersister.class ) {
+			customLookupSql.clear();
+			if ( !sqlSelectSizeString.equals( defaultSelectSizeString( hasIndex() && !isMap() ) ) ) {
+				customLookupSql.add( Operation.SIZE );
+			}
+			if ( !java.util.Objects.equals( sqlDetectRowByIndexString, defaultDetectRowByIndexString() ) ) {
+				customLookupSql.add( Operation.INDEX_EXISTS );
+			}
+			if ( !sqlDetectRowByElementString.equals( defaultDetectRowByElementString() ) ) {
+				customLookupSql.add( Operation.ELEMENT_EXISTS );
+			}
+		}
 	}
 
 	private boolean isMap() {
@@ -756,6 +779,7 @@ public abstract class AbstractCollectionPersister
 
 	@Override
 	public void postInstantiate() throws MappingException {
+		hasStaticRowRestrictions = attributeMapping.hasRowRestrictions( new LoadQueryInfluencers( factory ) );
 		collectionLoader =
 				hasNamedQueryLoader()
 						// We pass null as metamodel because we did the initialization during construction already
@@ -1089,6 +1113,11 @@ public abstract class AbstractCollectionPersister
 
 	@Nonnull
 	protected String generateSelectSizeString(boolean isIntegerIndexed) {
+		return defaultSelectSizeString( isIntegerIndexed );
+	}
+
+	@Nonnull
+	private String defaultSelectSizeString(boolean isIntegerIndexed) {
 		final String selectValue = isIntegerIndexed
 				? "max(" + castNonNull( getIndexColumnNames() )[0] + ") + 1"  // lists, arrays
 				: "count(*)"; // sets, maps, bags
@@ -1103,6 +1132,11 @@ public abstract class AbstractCollectionPersister
 
 	@Nullable
 	protected String generateDetectRowByIndexString() {
+		return defaultDetectRowByIndexString();
+	}
+
+	@Nullable
+	private String defaultDetectRowByIndexString() {
 		if ( !hasIndex() ) {
 			return null;
 		}
@@ -1122,6 +1156,11 @@ public abstract class AbstractCollectionPersister
 
 	@Nonnull
 	protected String generateDetectRowByElementString() {
+		return defaultDetectRowByElementString();
+	}
+
+	@Nonnull
+	private String defaultDetectRowByElementString() {
 		return new SimpleSelect( getFactory() )
 				.setTableName( getTableName() )
 				.addRestriction( getKeyColumnNames() )
@@ -1516,14 +1555,50 @@ public abstract class AbstractCollectionPersister
 		}
 	}
 
+	/**
+	 * The loader for a lookup whose statement does not apply every restriction on
+	 * the rows of this collection, or {@code null} if the statement does.
+	 */
+	private @Nullable CollectionLookupLoader restrictedLookupLoader(Operation operation, SharedSessionContractImplementor session) {
+		// An explicit SQL override owns this operation, including its parameter contract,
+		// though it cannot read the collection as of a changeset.
+		if ( customLookupSql.contains( operation ) && !readsHistory( session ) ) {
+			return null;
+		}
+		final var influencers = session.getLoadQueryInfluencers();
+		if ( attributeMapping.isAffectedByRowRestrictions( influencers, true ) ) {
+			return new CollectionLookupLoader( attributeMapping, operation, influencers );
+		}
+		return hasStaticRowRestrictions
+				? lookupLoaders.computeIfAbsent( operation,
+						op -> new CollectionLookupLoader( attributeMapping, op, new LoadQueryInfluencers( factory ) ) )
+				: null;
+	}
+
 	int baseIndex() {
 		final int listIndexBase = getAttributeMapping().getIndexMetadata().getListIndexBase();
 		//noinspection ManualMinMaxCalculation
 		return listIndexBase < 0 ? 0 : listIndexBase;
 	}
 
+	/**
+	 * Whether the session reads this collection as of a changeset, which the
+	 * statements counting and detecting its rows do not, since they read its
+	 * current state.
+	 */
+	private boolean readsHistory(@Nonnull SharedSessionContractImplementor session) {
+		final var influencers = session.getLoadQueryInfluencers();
+		return influencers.getTemporalIdentifier() != null
+			&& !influencers.isAllRevisions()
+			&& hasHistory( attributeMapping );
+	}
+
 	@Override
 	public int getSize(@Nonnull Object key, @Nonnull SharedSessionContractImplementor session) {
+		final var loader = restrictedLookupLoader( Operation.SIZE, session );
+		if ( loader != null ) {
+			return loader.size( key, session );
+		}
 		try {
 			final var jdbcCoordinator = session.getJdbcCoordinator();
 			final var statement = jdbcCoordinator.getStatementPreparer().prepareStatement( sqlSelectSizeString );
@@ -1559,15 +1634,19 @@ public abstract class AbstractCollectionPersister
 
 	@Override
 	public boolean indexExists(@Nonnull Object key, @Nonnull Object index, @Nonnull SharedSessionContractImplementor session) {
-		return exists( key, incrementIndexByBase( index ), castNonNull( getIndexType() ), castNonNull( sqlDetectRowByIndexString ), session );
+		return exists( Operation.INDEX_EXISTS, key, incrementIndexByBase( index ), castNonNull( getIndexType() ), castNonNull( sqlDetectRowByIndexString ), session );
 	}
 
 	@Override
 	public boolean elementExists(@Nonnull Object key, @Nullable Object element, @Nonnull SharedSessionContractImplementor session) {
-		return exists( key, element, getElementType(), sqlDetectRowByElementString, session );
+		return exists( Operation.ELEMENT_EXISTS, key, element, getElementType(), sqlDetectRowByElementString, session );
 	}
 
-	private boolean exists(@Nonnull Object key, @Nullable Object indexOrElement, @Nonnull Type indexOrElementType, @Nonnull String sql, @Nonnull SharedSessionContractImplementor session) {
+	private boolean exists(Operation operation, @Nonnull Object key, @Nullable Object indexOrElement, @Nonnull Type indexOrElementType, @Nonnull String sql, @Nonnull SharedSessionContractImplementor session) {
+		final var loader = restrictedLookupLoader( operation, session );
+		if ( loader != null ) {
+			return loader.exists( key, indexOrElement, session );
+		}
 		try {
 			final var jdbcCoordinator = session.getJdbcCoordinator();
 			final var statement = jdbcCoordinator.getStatementPreparer().prepareStatement( sql );
@@ -1605,8 +1684,7 @@ public abstract class AbstractCollectionPersister
 	@Override
 	public Object getElementByIndex(@Nonnull Object key, @Nonnull Object index, @Nonnull SharedSessionContractImplementor session, @Nullable Object owner) {
 		final var influencers = session.getLoadQueryInfluencers();
-		if ( influencers.hasEnabledFilters()
-			&& isAffectedByFilters( new HashSet<>(), attributeMapping.getElementDescriptor(), influencers, true ) ) {
+		if ( attributeMapping.isAffectedByRowRestrictions( influencers, true ) ) {
 			return new CollectionElementLoaderByIndex( attributeMapping, influencers, factory )
 					.load( key, index, session );
 		}
@@ -1915,6 +1993,14 @@ public abstract class AbstractCollectionPersister
 				collectionBootDescriptor.getCustomSQLDeleteAll(),
 				customDeleteAllCallable
 		);
+	}
+
+	protected void applyDeleteAllRowsBindings(
+			@Nonnull Object key,
+			@Nonnull SharedSessionContractImplementor session,
+			@Nonnull JdbcValueBindings jdbcValueBindings) {
+		getAttributeMapping().getKeyDescriptor().getKeyPart().decompose(
+				key, 0, jdbcValueBindings, null, RowMutationOperations.DEFAULT_RESTRICTOR, session );
 	}
 
 	@Nonnull

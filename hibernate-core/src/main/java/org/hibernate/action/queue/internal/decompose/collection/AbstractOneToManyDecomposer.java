@@ -5,6 +5,7 @@ import org.hibernate.action.queue.spi.decompose.collection.CollectionMutationPla
 import org.hibernate.action.queue.spi.decompose.collection.OneToManyDecomposer;
 
 import org.hibernate.action.queue.internal.PreparedCollectionMutation;
+import org.hibernate.action.queue.internal.GraphBasedActionQueue;
 import org.hibernate.action.queue.spi.MutationKind;
 import org.hibernate.action.queue.spi.bind.BindPlan;
 import org.hibernate.action.queue.spi.bind.JdbcValueBindings;
@@ -111,7 +112,7 @@ public abstract class AbstractOneToManyDecomposer implements OneToManyDecomposer
 						writeIndexOrdinal,
 						ordinalBase,
 						session,
-						operations
+						operations::add
 				);
 			}
 		}
@@ -127,7 +128,7 @@ public abstract class AbstractOneToManyDecomposer implements OneToManyDecomposer
 					writeIndexOrdinal,
 					ordinalBase,
 					session,
-					operations
+					operations::add
 			) );
 		}
 		else {
@@ -170,13 +171,13 @@ public abstract class AbstractOneToManyDecomposer implements OneToManyDecomposer
 			int writeIndexOrdinal,
 			int ordinalBase,
 			SharedSessionContractImplementor session,
-			List<FlushOperation> operations) {
+			Consumer<FlushOperation> operationConsumer) {
 		final var jdbcOperations = selectJdbcOperations( entry, session );
 		final var insertRowPlan = jdbcOperations.insertRowPlan();
 		if ( insertRowPlan != null
 				&& ( inclusionAlreadyTested
 						|| collection.includeInRecreate( entry, entryPosition, collection, attribute ) ) ) {
-			operations.add( new FlushOperation(
+			operationConsumer.accept( new FlushOperation(
 					jdbcOperations.tableDescriptor(),
 					MutationKind.UPDATE,
 					insertRowPlan.jdbcOperation(),
@@ -199,12 +200,12 @@ public abstract class AbstractOneToManyDecomposer implements OneToManyDecomposer
 					entryPosition,
 					ordinalBase,
 					session,
-					operations::add
+					operationConsumer
 			);
 		}
 
 		if ( jdbcOperations.updateIndexPlan() != null ) {
-			operations.add( new FlushOperation(
+			operationConsumer.accept( new FlushOperation(
 					jdbcOperations.tableDescriptor(),
 					MutationKind.UPDATE_ORDER,
 					jdbcOperations.updateIndexPlan().jdbcOperation(),
@@ -342,11 +343,19 @@ public abstract class AbstractOneToManyDecomposer implements OneToManyDecomposer
 				planRemoveAll( key, ordinalBase, operationConsumer );
 			}
 			collection.preInsert( persister );
-			replaceAll.currentRows().forEach( (entry, position) -> planInsert(
+			final var attribute = persister.getAttributeMapping();
+			final int insertOrdinal = calculateOrdinal( ordinalBase, Slot.INSERT );
+			final int writeIndexOrdinal = calculateOrdinal( ordinalBase, Slot.WRITEINDEX );
+			// like a recreation, write the index columns of an inverse collection
+			replaceAll.currentRows().forEach( (entry, position) -> planRecreateEntry(
 					entry,
 					position,
+					true,
 					collection,
 					key,
+					attribute,
+					insertOrdinal,
+					writeIndexOrdinal,
 					ordinalBase,
 					session,
 					operationConsumer
@@ -376,16 +385,19 @@ public abstract class AbstractOneToManyDecomposer implements OneToManyDecomposer
 	}
 
 	private void applyFrozenChangeSet(
-			CollectionChangeSet changeSet,
+			CollectionChangeSet frozenChangeSet,
 			PersistentCollection<?> collection,
 			Object key,
 			int ordinalBase,
 			SharedSessionContractImplementor session,
 			Consumer<FlushOperation> operationConsumer) {
-		if ( changeSet.isEmpty() ) {
+		if ( frozenChangeSet.isEmpty() ) {
 			return;
 		}
-		if ( persister.hasIndex() && hasNumericChangeSetIndexes( changeSet ) ) {
+		final var changeSet = replacementsAsRemovalsAndAdditions( frozenChangeSet );
+		final boolean map = persister.getCollectionSemantics().getCollectionClassification().isMap();
+		// the keys of a map are not positions, even when they are numbers
+		if ( !map && persister.hasIndex() && hasNumericChangeSetIndexes( changeSet ) ) {
 			applyIndexedChangeSet( changeSet, collection, key, ordinalBase, session, operationConsumer );
 			return;
 		}
@@ -411,7 +423,6 @@ public abstract class AbstractOneToManyDecomposer implements OneToManyDecomposer
 				) );
 			}
 		}
-		final boolean map = persister.getCollectionSemantics().getCollectionClassification().isMap();
 		for ( var addition : changeSet.additions() ) {
 			final Object rowValue = map
 					? new SimpleImmutableEntry<>( addition.index(), addition.element() )
@@ -443,6 +454,23 @@ public abstract class AbstractOneToManyDecomposer implements OneToManyDecomposer
 				}
 			}
 		}
+	}
+
+	/// A one-to-many has no row of its own to update when an element is replaced by another entity.
+	/// The old element leaves the collection, and the new element joins it at the same index.
+	private static CollectionChangeSet replacementsAsRemovalsAndAdditions(CollectionChangeSet changeSet) {
+		if ( changeSet.valueChanges().isEmpty() ) {
+			return changeSet;
+		}
+		final var removals = new ArrayList<>( changeSet.removals() );
+		final var additions = new ArrayList<>( changeSet.additions() );
+		for ( var valueChange : changeSet.valueChanges() ) {
+			if ( valueChange.oldValue() != null ) {
+				removals.add( new CollectionChangeSet.Removal( valueChange.oldValue(), valueChange.index() ) );
+			}
+			additions.add( new CollectionChangeSet.Addition( valueChange.newValue(), valueChange.index() ) );
+		}
+		return new CollectionChangeSet( removals, additions, changeSet.shifts(), List.of() );
 	}
 
 	private void planInsert(
@@ -532,6 +560,7 @@ public abstract class AbstractOneToManyDecomposer implements OneToManyDecomposer
 			int ordinalBase,
 			SharedSessionContractImplementor session,
 			Consumer<FlushOperation> operationConsumer) {
+		contributeIndexChanges( collection, key, ordinalBase, session, operationConsumer );
 		mutationPlanContributor.contributeCollectionChange(
 				new CollectionMutationPlanContributor.CollectionChangeContext(
 						persister,
@@ -815,6 +844,9 @@ public abstract class AbstractOneToManyDecomposer implements OneToManyDecomposer
 			}
 		}
 
+		if ( !operations.isEmpty() ) {
+			contributeIndexChanges( collection, key, ordinalBase, session, operations::add );
+		}
 		operations.forEach( operationConsumer );
 	}
 
@@ -924,6 +956,22 @@ public abstract class AbstractOneToManyDecomposer implements OneToManyDecomposer
 			else {
 				MODEL_MUTATION_LOGGER.noRowsToDelete();
 			}
+		}
+	}
+
+	private void contributeIndexChanges(PersistentCollection<?> collection, Object key, int ordinalBase,
+			SharedSessionContractImplementor session, Consumer<FlushOperation> operationConsumer) {
+		if ( persister.hasAuditedIndex() ) {
+			final var snapshot = persister.getReplacementIndexSnapshot( collection, key, session );
+			operationConsumer.accept( DecompositionSupport.createNoOpCallbackCarrier(
+					persister.getCollectionTableDescriptor(),
+					ordinalBase * 1_000 + 900,
+					executionSession -> {
+						final var queue = (GraphBasedActionQueue) executionSession.getActionQueue();
+						persister.visitElementsWithChangedIndex( collection, key, snapshot, executionSession,
+								queue.getAuditMutationCollector()::indexedElementChanged );
+					}
+			) );
 		}
 	}
 

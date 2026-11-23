@@ -1,6 +1,7 @@
 package org.hibernate.metamodel.mapping;
 
 import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
 
 import java.util.List;
 import java.util.function.Consumer;
@@ -8,9 +9,11 @@ import java.util.function.Supplier;
 
 import org.hibernate.Incubating;
 import org.hibernate.engine.spi.LoadQueryInfluencers;
+import org.hibernate.mapping.Property;
 import org.hibernate.spi.NavigablePath;
 import org.hibernate.sql.ast.spi.creation.SqlAliasBaseGenerator;
 import org.hibernate.sql.ast.spi.creation.SqlAstCreationState;
+import org.hibernate.sql.ast.spi.query.expression.Expression;
 import org.hibernate.sql.ast.spi.query.from.LazyTableGroup;
 import org.hibernate.sql.ast.spi.query.from.NamedTableReference;
 import org.hibernate.sql.ast.spi.query.from.TableGroup;
@@ -36,6 +39,13 @@ import org.hibernate.sql.ast.spi.query.predicate.Predicate;
 /// @since 7.4
 @Incubating(since = "5.4")
 public interface AuxiliaryMapping {
+	/// Called during mapping initialization for the inverse side of a shared collection table.
+	/// Returns the auxiliary mapping to use for reads of that property, or null if none applies.
+	@Nullable
+	default AuxiliaryMapping forInverseCollection(@Nonnull Property inverseProperty) {
+		return null;
+	}
+
 	/// The primary auxiliary table name.
 	///
 	/// Single-table state-management strategies generally use this table for all
@@ -90,6 +100,33 @@ public interface AuxiliaryMapping {
 			@Nonnull TableGroup tableGroup,
 			@Nonnull SqlAliasBaseGenerator sqlAliasBaseGenerator,
 			@Nonnull LoadQueryInfluencers influencers);
+
+	/// Restricts the rows of an entity which is the target of an association. A
+	/// predicate on the row alone is passed to `rowRestrictions`, and may be applied
+	/// inside a preserved join operand. A predicate which also refers to the owner of
+	/// the association is passed to `ownerRestrictions`, and must be applied where
+	/// both are in scope.
+	///
+	/// In an all-revisions query, `ownerRevision` is the revision of the audit snapshot
+	/// which owns the association, and the rows are read as of that revision.
+	default void applyAssociationRestrictions(
+			@Nonnull EntityMappingType associatedEntityDescriptor, @Nonnull TableGroup tableGroup,
+			@Nullable Expression ownerRevision,
+			@Nonnull Consumer<Predicate> rowRestrictions, @Nonnull Consumer<Predicate> ownerRestrictions,
+			@Nonnull SqlAliasBaseGenerator aliases, @Nonnull LoadQueryInfluencers influencers) {
+		applyPredicate( associatedEntityDescriptor, rowRestrictions, tableGroup, aliases, influencers );
+	}
+
+	/// Restricts the rows of a collection, in the same way as the overload for the
+	/// target of an association restricts an entity. For an inverse collection,
+	/// `collectionDescriptor` is the inverse attribute being read.
+	default void applyAssociationRestrictions(
+			@Nonnull PluralAttributeMapping collectionDescriptor, @Nonnull TableGroup tableGroup,
+			@Nullable Expression ownerRevision,
+			@Nonnull Consumer<Predicate> rowRestrictions, @Nonnull Consumer<Predicate> ownerRestrictions,
+			@Nonnull SqlAliasBaseGenerator aliases, @Nonnull LoadQueryInfluencers influencers) {
+		applyPredicate( collectionDescriptor, rowRestrictions, tableGroup, aliases, influencers );
+	}
 
 	/// Applies the auxiliary row restriction directly to a table-group join.
 	///
@@ -146,12 +183,53 @@ public interface AuxiliaryMapping {
 	@Nonnull
 	JdbcMapping getJdbcMapping();
 
+	/// Whether this mapping can contribute a row restriction to an association join.
+	default boolean hasRowRestriction(@Nonnull LoadQueryInfluencers influencers) {
+		return true;
+	}
+
+	/// Whether fetching a collection must keep its owner when this mapping hides every row.
+	default boolean requiresOwnerPreservationOnCollectionFetch() {
+		return false;
+	}
+
+	/// Whether these session settings require a target table read for an association
+	/// key that could otherwise be read from the foreign key.
+	default boolean requiresTargetTableForKeyRead(@Nonnull LoadQueryInfluencers influencers) {
+		return isAffectedByRowRestrictions( influencers );
+	}
+
+	/// Whether row visibility differs from a load using the default session settings.
+	/// Mappings whose SQL varies for other reasons may refine the conservative default.
+	default boolean isAffectedByRowRestrictions(@Nonnull LoadQueryInfluencers influencers) {
+		return isAffectedByInfluencers( influencers );
+	}
+
 	/// Whether this mapping should use its auxiliary table for the supplied
 	/// query influencers.
 	///
 	/// Some strategies use the primary table for current-state queries and an
 	/// auxiliary table only for historical or audit views.
 	boolean useAuxiliaryTable(@Nonnull LoadQueryInfluencers influencers);
+
+	/// Whether a one-to-many read must join a separate membership table to the element table.
+	default boolean requiresSeparateMembershipTable(@Nonnull LoadQueryInfluencers influencers) {
+		return false;
+	}
+
+	/// The start of a row version when reading at an owner's revision, for testing
+	/// whether the joined versions of a collection row, its key, and its element coexist.
+	@Nullable
+	default SelectableMapping getVersionStart(@Nonnull String originalTableName, @Nonnull LoadQueryInfluencers influencers) {
+		return null;
+	}
+
+	/// Whether the rows of this mapping can be read as of the revision of the owner of
+	/// an association, in which case they are read from its history, in place of its
+	/// current state, when an association restriction is given such a revision.
+	default boolean readsHistoryAtOwnerRevision(@Nonnull LoadQueryInfluencers influencers) {
+		return false;
+	}
 
 	/// Whether query plans involving this mapping are affected by the supplied
 	/// influencers.

@@ -8,6 +8,7 @@ import org.hibernate.cache.spi.access.EntityDataAccess;
 import org.hibernate.cache.spi.access.SoftLock;
 import org.hibernate.engine.spi.SharedSessionContractImplementor;
 import org.hibernate.metamodel.mapping.JdbcMapping;
+import org.hibernate.metamodel.mapping.internal.EntityCollectionPart;
 import org.hibernate.persister.collection.CollectionPersister;
 import org.hibernate.persister.entity.EntityPersister;
 import org.hibernate.type.descriptor.converter.spi.BasicValueConverter;
@@ -26,6 +27,55 @@ public final class CacheHelper {
 	}
 
 	public record CacheLock(@Nonnull EntityDataAccess cache, Object cacheKey, SoftLock lock) {
+	}
+
+	/**
+	 * Whether the given session reads a historical snapshot of the given
+	 * entity, which the second-level cache, holding the current state of
+	 * the entity, cannot supply.
+	 */
+	public static boolean readsHistory(
+			@Nonnull SharedSessionContractImplementor session,
+			@Nonnull EntityPersister persister) {
+		final var auxiliaryMapping = persister.getAuxiliaryMapping();
+		return auxiliaryMapping != null
+			&& auxiliaryMapping.isAffectedByInfluencers( session.getLoadQueryInfluencers() );
+	}
+
+	/**
+	 * Whether the changeset affects the collection table or its associated
+	 * entities, its elements or the keys of a map, and therefore the
+	 * collection's cached membership.
+	 */
+	public static boolean readsHistory(
+			@Nonnull SharedSessionContractImplementor session,
+			@Nonnull CollectionPersister persister) {
+		final var influencers = session.getLoadQueryInfluencers();
+		if ( influencers.getTemporalIdentifier() == null ) {
+			return false;
+		}
+		final var auxiliaryMapping = persister.getAttributeMapping().getAuxiliaryMapping();
+		return auxiliaryMapping != null && auxiliaryMapping.isAffectedByInfluencers( influencers )
+			|| ( persister.isOneToMany() || persister.isManyToMany() )
+					&& readsHistory( session, persister.getElementPersister() )
+			|| persister.getAttributeMapping().getIndexDescriptor() instanceof EntityCollectionPart index
+					&& readsHistory( session, index.getAssociatedEntityMappingType().getEntityPersister() );
+	}
+
+	/**
+	 * A cached collection holds identifiers. A change to a map key may hide or reveal
+	 * its entry without modifying the collection or invalidating its cache entry.
+	 */
+	public static boolean canUseCollectionCache(
+			@Nonnull SharedSessionContractImplementor session, @Nonnull CollectionPersister persister) {
+		if ( !persister.hasCache() || readsHistory( session, persister ) ) {
+			return false;
+		}
+		if ( persister.getAttributeMapping().getIndexDescriptor() instanceof EntityCollectionPart key ) {
+			final var keyType = key.getAssociatedEntityMappingType();
+			return !keyType.hasWhereRestrictions() && keyType.getSoftDeleteMapping() == null;
+		}
+		return true;
 	}
 
 	public static Object fromSharedCache(

@@ -95,6 +95,7 @@ import org.hibernate.engine.FetchStyle;
 import org.hibernate.internal.util.PropertiesHelper;
 import org.hibernate.internal.util.collections.ArrayHelper;
 import org.hibernate.jdbc.Expectation;
+import org.hibernate.mapping.IndexedCollection;
 import org.hibernate.mapping.Backref;
 import org.hibernate.mapping.CheckConstraint;
 import org.hibernate.mapping.Collection;
@@ -1251,6 +1252,14 @@ public abstract class CollectionBinder {
 						+ qualify( propertyHolder.getPath(), propertyName )
 						+ "' is 'mappedBy' another entity and may not specify the '@JoinTable'" );
 			}
+			detectMappedByCustomSql( SQLInsert.class );
+			detectMappedByCustomSql( SQLDelete.class );
+			detectMappedByCustomSql( SQLDeleteAll.class );
+			// an unowned one-to-many association with an order column
+			// or map key column writes that column using an update
+			if ( !oneToMany || !collection.isIndexed() || hasMapKeyProperty ) {
+				detectMappedByCustomSql( SQLUpdate.class );
+			}
 			if ( oneToMany ) {
 				if ( property.hasDirectAnnotationUsage( MapKeyColumn.class ) ) {
 					BOOT_LOGGER.mappedByShouldNotSpecifyMapKeyColumn(
@@ -1284,6 +1293,15 @@ public abstract class CollectionBinder {
 			throw new AnnotationException( "Unidirectional '@OneToMany' association '"
 					+ qualify( propertyHolder.getPath(), propertyName )
 					+ "' is annotated '@OnDelete' and must explicitly specify a '@JoinColumn'" );
+		}
+	}
+
+	private void detectMappedByCustomSql(Class<? extends Annotation> annotationType) {
+		if ( property.hasDirectAnnotationUsage( annotationType ) ) {
+			throw new AnnotationException( "Association '"
+					+ qualify( propertyHolder.getPath(), propertyName )
+					+ "' is 'mappedBy' another entity and may not specify '@"
+					+ annotationType.getSimpleName() + "'" );
 		}
 	}
 
@@ -1708,9 +1726,14 @@ public abstract class CollectionBinder {
 
 		// For @OneToMany @JoinColumn on an @Audited entity, create a middle audit table
 		// to track collection membership changes (same approach as @ManyToMany / @JoinTable)
-		if ( !collection.isInverse() ) {
-			final var audited = extract( Audited.class, property, buildingContext );
-			if ( audited != null && !property.hasDirectAnnotationUsage( Audited.Excluded.class ) ) {
+		if ( extract( Audited.class, property, buildingContext ) != null
+				&& !property.hasDirectAnnotationUsage( Audited.Excluded.class ) ) {
+			if ( collection.isInverse() ) {
+				if ( collection instanceof IndexedCollection indexed ) {
+					collectionTable.addAuditedInverseCollection( indexed );
+				}
+			}
+			else {
 				AuditHelper.bindOneToManyAuditTable(
 						extract( Audited.Table.class, property, buildingContext ),
 						collection,

@@ -20,12 +20,13 @@ import org.hibernate.boot.model.naming.Identifier;
 import org.hibernate.boot.model.naming.PhysicalNamingStrategy;
 import org.hibernate.boot.model.relational.Database;
 import org.hibernate.boot.spi.MetadataBuildingContext;
-import org.hibernate.engine.spi.LoadQueryInfluencers;
 import org.hibernate.mapping.AuxiliaryTableHolder;
 import org.hibernate.mapping.Backref;
 import org.hibernate.mapping.BasicValue;
 import org.hibernate.mapping.Collection;
 import org.hibernate.mapping.Column;
+import org.hibernate.mapping.DependantBasicValue;
+import org.hibernate.mapping.IndexedCollection;
 import org.hibernate.mapping.PersistentClass;
 import org.hibernate.mapping.PrimaryKey;
 import org.hibernate.mapping.Property;
@@ -39,6 +40,8 @@ import org.hibernate.models.spi.ClassDetails;
 import org.hibernate.models.spi.MemberDetails;
 import org.hibernate.persister.state.internal.AuditStateManagement;
 import org.hibernate.resource.beans.spi.ManagedBeanRegistry;
+import org.hibernate.sql.ast.spi.creation.SqlAstCreationState;
+import org.hibernate.sql.results.graph.FetchParent;
 import org.hibernate.sql.results.graph.Fetchable;
 import org.hibernate.temporal.spi.ChangesetCoordinator;
 
@@ -51,6 +54,7 @@ import static org.hibernate.audit.AuditStrategy.VALIDITY;
 import static org.hibernate.cfg.StateManagementSettings.AUDIT_STRATEGY;
 import static org.hibernate.internal.util.StringHelper.isBlank;
 import static org.hibernate.internal.util.StringHelper.nullIfBlank;
+import static org.hibernate.metamodel.mapping.internal.CurrentState.readsCurrentState;
 
 /**
  * Helper for building audit log tables in the boot model.
@@ -293,10 +297,11 @@ public final class AuditHelper {
 
 	/**
 	 * Create a middle audit table for unidirectional @OneToMany @JoinColumn.
-	 * The table tracks collection membership with (parent_key, child_key, REV, REVTYPE)
+	 * The table tracks collection membership with (parent_key, child_key, index, REV, REVTYPE),
+	 * where the index is the order column or map key columns of a list or map.
 	 * <p>
-	 * The child entity's FK column is on the child table, but from an entity model
-	 * perspective the collection is part of the parent entity's state.
+	 * The child entity's FK and index columns are on the child table, but from an entity
+	 * model perspective the collection is part of the parent entity's state.
 	 */
 	static void bindOneToManyAuditTable(
 			@Nullable Audited.Table auditTable,
@@ -355,6 +360,10 @@ public final class AuditHelper {
 			for ( var column : referencedEntity.getKey().getColumns() ) {
 				keyColumns.add( copyColumnRemovingUnique( column, middleAuditTable ) );
 			}
+			// Copy the order column or map key columns written by the collection
+			for ( var column : writtenIndexColumns( collection ) ) {
+				keyColumns.add( copyColumnRemovingUnique( column, middleAuditTable ) );
+			}
 			// Audit columns
 			final var changesetIdColumn = createAuditColumn(
 					csIdColumnName,
@@ -375,6 +384,28 @@ public final class AuditHelper {
 			enableAudit( collection, middleAuditTable, changesetIdColumn, modificationTypeColumn );
 			addTransactionEndColumns( auditTable, collection, middleAuditTable, context );
 		} );
+	}
+
+	/**
+	 * The columns of the index of a list or map which are written by the collection:
+	 * an order column or map key columns, but not a map key which is an attribute of
+	 * the element.
+	 */
+	public static List<Column> writtenIndexColumns(Collection collection) {
+		final List<Column> columns = new ArrayList<>();
+		if ( collection instanceof IndexedCollection indexedCollection
+				&& !indexedCollection.hasMapKeyProperty() ) {
+			final var index = indexedCollection.getIndex();
+			final boolean[] insertable = index.getColumnInsertability();
+			final boolean[] updatable = index.getColumnUpdateability();
+			final var selectables = index.getSelectables();
+			for ( int i = 0; i < selectables.size(); i++ ) {
+				if ( selectables.get( i ) instanceof Column column && ( insertable[i] || updatable[i] ) ) {
+					columns.add( column );
+				}
+			}
+		}
+		return columns;
 	}
 
 	@Nonnull
@@ -632,6 +663,14 @@ public final class AuditHelper {
 				copyColumnRemovingUnique( column, targetTable );
 			}
 		}
+		for ( var collection : sourceTable.getAuditedInverseCollections() ) {
+			for ( var column : writtenIndexColumns( collection ) ) {
+				if ( targetTable.getColumn( column ) == null ) {
+					// There is no current index to copy into a deletion revision.
+					copyColumnRemovingUnique( column, targetTable ).setNullable( true );
+				}
+			}
+		}
 	}
 
 	private static Column copyColumnRemovingUnique(Column sourceColumn, Table auditTable) {
@@ -667,30 +706,38 @@ public final class AuditHelper {
 			Class<?> javaType,
 			Table table,
 			MetadataBuildingContext context) {
-		final var basicValue = new BasicValue( context, table );
-		basicValue.setImplicitJavaTypeAccess( typeConfiguration -> javaType );
 		final var column = new Column();
 		column.setNullable( false );
-		column.setValue( basicValue );
-		basicValue.addColumn( column );
+		final var value = javaType == Instant.class
+				? createTimestampValue( column, table, context )
+				: new BasicValue( context, table );
+		value.setImplicitJavaTypeAccess( typeConfiguration -> javaType );
+		value.addColumn( column );
 
 		final var database = context.getMetadataCollector().getDatabase();
 		setColumnName( columnName, column, database,
 				context.getBuildingOptions().getPhysicalNamingStrategy() );
-		setTemporalColumnType( column, database, javaType );
-
 		return column;
 	}
 
-	private static void setTemporalColumnType(
-			Column column,
-			Database database,
-			Class<?> javaType) {
-		if ( Instant.class.equals( javaType ) ) {
-			final var temporalTableSupport = database.getDialect().getTemporalTableSupport();
-			column.setTemporalPrecision( temporalTableSupport.getTemporalColumnPrecision() );
-			column.setSqlTypeCode( temporalTableSupport.getTemporalColumnType() );
+	private static BasicValue createTimestampValue(Column column, Table table, MetadataBuildingContext context) {
+		final var key = getChangelogKey( context );
+		if ( key != null ) {
+			final var keyColumn = key.getColumns().get( 0 );
+			column.setTemporalPrecision( keyColumn.getTemporalPrecision() );
+			column.setSqlType( keyColumn.getSqlType() );
+			return new DependantBasicValue( context, table, (BasicValue) key.getValue(), false, false );
 		}
+
+		final var value = new BasicValue( context, table );
+		final var support = value.getDialect().getTemporalTableSupport();
+		column.setTemporalPrecision( support.getTemporalColumnPrecision() );
+		final var preferredType = value.getJdbcType( value.getPreferredSqlTypeCodeForInstant() );
+		final var keyType = support.getInstantAuditKeyJdbcType( preferredType );
+		if ( keyType != preferredType ) {
+			value.setExplicitJdbcTypeAccess( typeConfiguration -> keyType );
+		}
+		return value;
 	}
 
 	private static void setColumnName(
@@ -731,22 +778,21 @@ public final class AuditHelper {
 
 	/**
 	 * Create a FK from the audit table's REV (or REVEND) column to the
-	 * changelog entity's PK. Only applies when {@code @Changelog}
+	 * changelog entity's changeset identifier. Only applies when {@code @Changelog}
 	 * is configured.
 	 */
 	private static void createChangesetForeignKey(
 			Table auditTable,
 			Column revColumn,
 			MetadataBuildingContext context) {
-		final String changelogName = getChangelogName( context );
-		if ( changelogName != null ) {
-			auditTable.createForeignKey(
-					null,
-					List.of( revColumn ),
-					changelogName,
-					null,
-					null
+		final var key = getChangelogKey( context );
+		if ( key != null ) {
+			final var changelog = key.getPersistentClass();
+			final var fk = auditTable.createForeignKey(
+					null, List.of( revColumn ), changelog.getEntityName(), null, null,
+					key == changelog.getIdentifierProperty() ? null : key.getColumns()
 			);
+			fk.setReferencedTable( key.getValue().getTable() );
 		}
 	}
 
@@ -769,9 +815,13 @@ public final class AuditHelper {
 		fk.setReferencedTable( referencedAuditTable );
 	}
 
-	private static @Nullable String getChangelogName(MetadataBuildingContext context) {
+	private static @Nullable Property getChangelogKey(MetadataBuildingContext context) {
 		final var supplier = ChangelogSupplier.resolve( context.getBootstrapContext().getServiceRegistry() );
-		return supplier != null ? supplier.getChangelogClass().getName() : null;
+		return supplier == null ? null : requireBasicProperty(
+				context.getMetadataCollector().getEntityBinding( supplier.getChangelogClass().getName() ),
+				supplier.getChangesetIdProperty(),
+				"@Changelog.ChangesetId"
+		);
 	}
 
 	private static Set<String> resolveExcludedColumns(Iterable<Property> properties) {
@@ -839,7 +889,9 @@ public final class AuditHelper {
 	 * {@code false} immediately when there is no temporal identifier
 	 * (the common case for non-audit queries).
 	 */
-	public static boolean isFetchableAuditExcluded(Fetchable fetchable, LoadQueryInfluencers influencers) {
+	public static boolean isFetchableAuditExcluded(
+			FetchParent fetchParent, Fetchable fetchable, SqlAstCreationState creationState) {
+		final var influencers = creationState.getLoadQueryInfluencers();
 		if ( influencers.getTemporalIdentifier() == null ) {
 			return false;
 		}
@@ -849,7 +901,10 @@ public final class AuditHelper {
 				&& attr.getDeclaringType() instanceof EntityMappingType entityMappingType ) {
 			final var persister = entityMappingType.getEntityPersister();
 			return persister.getAuditMapping() != null
-					&& persister.isPropertyAuditedExcluded( attr.getStateArrayPosition() );
+					&& persister.isPropertyAuditedExcluded( attr.getStateArrayPosition() )
+					&& !readsCurrentState(
+							creationState.getFromClauseAccess().findTableGroup( fetchParent.getNavigablePath() ),
+							creationState );
 		}
 		return false;
 	}

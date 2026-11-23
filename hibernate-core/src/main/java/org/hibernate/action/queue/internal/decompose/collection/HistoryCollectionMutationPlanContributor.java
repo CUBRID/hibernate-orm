@@ -17,8 +17,6 @@ import org.hibernate.persister.collection.CollectionPersister;
 import org.hibernate.persister.entity.mutation.TemporalMutationHelper;
 import org.hibernate.sql.ast.spi.query.expression.ColumnReference;
 import org.hibernate.sql.spi.mutation.MutationOperation;
-import org.hibernate.sql.spi.mutation.MutationType;
-import org.hibernate.sql.spi.mutation.TableMapping.MutationDetails;
 import org.hibernate.sql.ast.spi.model.MutatingTableReference;
 import org.hibernate.sql.ast.spi.model.builder.TableInsertBuilderStandard;
 
@@ -143,10 +141,10 @@ public class HistoryCollectionMutationPlanContributor implements CollectionMutat
 		final var builder = new org.hibernate.sql.ast.spi.model.builder.TableUpdateBuilderStandard<>(
 				(CollectionMutationTarget) persister, reference, factory, sqlWhereString );
 		if ( allRows ) {
-			CollectionMutationPlanSupport.applyRemoveRestrictions( persister, null, builder );
+			CollectionMutationPlanSupport.applyRemoveRestrictions( persister, builder );
 		}
 		else {
-			CollectionMutationPlanSupport.applyRowDeleteRestrictions( persister, null, builder );
+			CollectionMutationPlanSupport.applyRowDeleteRestrictions( persister, builder );
 		}
 		return CollectionMutationPlanSupport.buildTemporalDeleteMutation( builder, reference, temporal )
 				.createMutationOperation( null, factory );
@@ -203,13 +201,7 @@ public class HistoryCollectionMutationPlanContributor implements CollectionMutat
 				tableDescriptor.isSelfReferential(),
 				tableDescriptor.hasUniqueConstraints(),
 				tableDescriptor.cascadeDeleteEnabled(),
-				new MutationDetails(
-						MutationType.INSERT,
-						tableDescriptor.insertDetails().getExpectation(),
-						null,
-						false,
-						tableDescriptor.insertDetails().isDynamicMutation()
-				),
+				tableDescriptor.insertDetails(),
 				tableDescriptor.updateDetails(),
 				tableDescriptor.deleteDetails(),
 				tableDescriptor.deleteAllDetails(),

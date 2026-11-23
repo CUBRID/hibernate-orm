@@ -163,6 +163,7 @@ import org.hibernate.metamodel.spi.RuntimeModelCreationContext;
 import org.hibernate.models.internal.util.CollectionHelper;
 import org.hibernate.persister.collection.CollectionPersister;
 import org.hibernate.persister.entity.mutation.DeleteCoordinator;
+import org.hibernate.persister.entity.mutation.EntityAuditSupport;
 import org.hibernate.action.queue.internal.decompose.entity.DeleteDecomposer;
 import org.hibernate.persister.entity.mutation.EntityTableMapping;
 import org.hibernate.persister.entity.mutation.EntityTableMappingImpl;
@@ -259,6 +260,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
+import static org.hibernate.metamodel.mapping.internal.CurrentState.loadByKey;
 import static org.hibernate.internal.util.NullnessUtil.castNonNull;
 
 import static java.util.Collections.emptyList;
@@ -425,6 +427,7 @@ public abstract class AbstractEntityPersister
 
 	@SuppressWarnings("NullAway.Init") // Initialized during mapping model creation.
 	private EntityTableMapping[] tableMappings;
+	private EntityAuditSupport entityAuditSupport;
 	@SuppressWarnings("NullAway.Init") // Initialized during mapping model creation.
 	private InsertCoordinator insertCoordinator;
 	@SuppressWarnings("NullAway.Init") // Initialized during mapping model creation.
@@ -1434,16 +1437,16 @@ public abstract class AbstractEntityPersister
 		final Map<String, SingleIdArrayLoadPlan> result = new HashMap<>();
 		final var attributesMetadata = metadata.getLazyAttributesMetadata();
 		for ( String groupName : attributesMetadata.getFetchGroupNames() ) {
-			final var plan = createLazyLoadPlan( attributesMetadata.getFetchGroupAttributeDescriptors( groupName ) );
-			if ( plan != null ) {
-				result.put( groupName, plan );
+			final var parts = getLazyFetchGroupParts( attributesMetadata.getFetchGroupAttributeDescriptors( groupName ) );
+			if ( !parts.isEmpty() ) {
+				result.put( groupName, createLazyLoadPlan( parts, new LoadQueryInfluencers( factory ) ) );
 			}
 		}
 		return result;
 	}
 
-	@Nullable
-	private SingleIdArrayLoadPlan createLazyLoadPlan(@Nonnull List<LazyAttributeDescriptor> fetchGroupAttributeDescriptors) {
+	@Nonnull
+	private List<ModelPart> getLazyFetchGroupParts(@Nonnull List<LazyAttributeDescriptor> fetchGroupAttributeDescriptors) {
 		final List<ModelPart> partsToSelect = new ArrayList<>( fetchGroupAttributeDescriptors.size() );
 		for ( var lazyAttributeDescriptor : fetchGroupAttributeDescriptors ) {
 			// all this only really needs to consider properties
@@ -1452,11 +1455,13 @@ public abstract class AbstractEntityPersister
 			// use the subclass closure
 			partsToSelect.add( getAttributeMapping( getSubclassPropertyIndex( lazyAttributeDescriptor.getName() ) ) );
 		}
-		return partsToSelect.isEmpty() ? null : createLazyLoanPlan( partsToSelect );
+		return partsToSelect;
 	}
 
 	@Nonnull
-	private SingleIdArrayLoadPlan createLazyLoanPlan(@Nonnull List<ModelPart> partsToSelect) {
+	private SingleIdArrayLoadPlan createLazyLoadPlan(
+			@Nonnull List<ModelPart> partsToSelect,
+			@Nonnull LoadQueryInfluencers influencers) {
 		assert !partsToSelect.isEmpty();
 		final var lockOptions = new LockOptions();
 		final var jdbcParametersBuilder = JdbcParametersList.newBuilder();
@@ -1466,7 +1471,7 @@ public abstract class AbstractEntityPersister
 				getIdentifierMapping(),
 				null,
 				1,
-				new LoadQueryInfluencers( factory ),
+				influencers,
 				lockOptions,
 				jdbcParametersBuilder::add,
 				new SqlAliasBaseManager(),
@@ -1601,14 +1606,26 @@ public abstract class AbstractEntityPersister
 			boolean innerJoin,
 			@Nonnull String[] targetColumns,
 			@Nonnull SqlAstCreationState creationState) {
-		final var joinedTableReference = new NamedTableReference(
-				joinTableExpression,
-				sqlAliasBase.generateNewAlias(),
-				!innerJoin
-		);
-		joinedTableReference.applyAuxiliaryTable( auxiliaryMapping,
-				creationState.getLoadQueryInfluencers() );
-		return new TableReferenceJoin(
+		final var loadQueryInfluencers = creationState.getLoadQueryInfluencers();
+		// a joined table of a snapshot is read from the auxiliary table, like the root table
+		final String auxiliaryTableName =
+				auxiliaryMapping != null && auxiliaryMapping.useAuxiliaryTable( loadQueryInfluencers )
+						? auxiliaryMapping.resolveTableName( joinTableExpression )
+						: null;
+		final var joinedTableReference = auxiliaryTableName != null
+				? new AuxiliaryTableReference(
+						auxiliaryTableName,
+						joinTableExpression,
+						sqlAliasBase.generateNewAlias(),
+						!innerJoin
+				)
+				: new NamedTableReference(
+						joinTableExpression,
+						sqlAliasBase.generateNewAlias(),
+						!innerJoin
+				);
+		joinedTableReference.applyAuxiliaryTable( auxiliaryMapping, loadQueryInfluencers );
+		final var tableReferenceJoin = new TableReferenceJoin(
 				innerJoin,
 				joinedTableReference,
 				generateJoinPredicate(
@@ -1619,6 +1636,17 @@ public abstract class AbstractEntityPersister
 						creationState
 				)
 		);
+		if ( auxiliaryTableName != null && lhs instanceof NamedTableReference primaryTableReference ) {
+			castNonNull( auxiliaryMapping ).applyPredicate(
+					tableReferenceJoin,
+					primaryTableReference,
+					joinTableExpression,
+					this,
+					creationState.getSqlAliasBaseGenerator(),
+					loadQueryInfluencers
+			);
+		}
+		return tableReferenceJoin;
 	}
 
 	@Nonnull
@@ -1712,7 +1740,8 @@ public abstract class AbstractEntityPersister
 
 		// attempt to read it from second-level cache
 		if ( session.getCacheMode().isGetEnabled()
-				&& isLazyPropertiesCacheable() ) {
+				&& isLazyPropertiesCacheable()
+				&& !entry.getEntityKey().isTemporal() ) {
 			final Object cachedValue = initializeLazyFieldFromCache( fieldName, entity, session, id, entry );
 			if ( cachedValue != UNFETCHED_PROPERTY ) {
 				// The following should be redundant, since the setter should have set this already.
@@ -1869,16 +1898,43 @@ public abstract class AbstractEntityPersister
 
 		final var lazyAttributesMetadata = getBytecodeEnhancementMetadata().getLazyAttributesMetadata();
 		final String fetchGroup = lazyAttributesMetadata.getFetchGroupName( fieldName );
-		final var fetchGroupAttributeDescriptors =
-				lazyAttributesMetadata.getFetchGroupAttributeDescriptors( fetchGroup );
-		final var lazySelectLoadPlan = castNonNull( getSQLLazySelectLoadPlan( fetchGroup ) );
+		final var historical = entry.getEntityKey().isTemporal();
+		final var groupAttributes = lazyAttributesMetadata.getFetchGroupAttributeDescriptors( fetchGroup );
+		final boolean auditSnapshot = historical && getAuditMapping() != null;
+		final var fetchGroupAttributeDescriptors = auditSnapshot
+				? groupAttributes.stream()
+						.filter( attribute -> !isPropertyAuditedExcluded( attribute.getAttributeIndex() ) )
+						.toList()
+				: groupAttributes;
 		try {
 			Object finalResult = null;
-			final var results = lazySelectLoadPlan.load( id, session );
+			final var initializedLazyAttributeNames = interceptor.getInitializedLazyAttributeNames();
+			if ( auditSnapshot ) {
+				// An audit row has no columns for excluded attributes: they read as absent
+				for ( var attribute : groupAttributes ) {
+					final String attributeName = attribute.getName();
+					if ( isPropertyAuditedExcluded( attribute.getAttributeIndex() ) ) {
+						final int propertyIndex = getPropertyIndex( attributeName );
+						final Object absentValue = absentValue( getAttributeMapping( propertyIndex ) );
+						if ( fieldName.equals( attributeName ) ) {
+							finalResult = absentValue;
+						}
+						if ( !initializedLazyAttributeNames.contains( attributeName ) ) {
+							initializeLazyProperty( entity, entry, absentValue, propertyIndex, attribute.getType() );
+						}
+					}
+				}
+				if ( fetchGroupAttributeDescriptors.isEmpty() ) {
+					CORE_LOGGER.doneInitializingLazyProperties();
+					return finalResult;
+				}
+			}
+			final var results = historical
+					? loadHistoricalLazyAttributes( getLazyFetchGroupParts( fetchGroupAttributeDescriptors ), entry, session )
+					: castNonNull( getSQLLazySelectLoadPlan( fetchGroup ) ).load( id, session );
 			if ( results == null ) {
 				throw new ObjectNotFoundException( id, getEntityName() );
 			}
-			final var initializedLazyAttributeNames = interceptor.getInitializedLazyAttributeNames();
 			int i = 0;
 			for ( var fetchGroupAttributeDescriptor : fetchGroupAttributeDescriptors ) {
 				final String attributeName = fetchGroupAttributeDescriptor.getName();
@@ -1927,11 +1983,11 @@ public abstract class AbstractEntityPersister
 			@Nonnull SharedSessionContractImplementor session) {
 		// An eager property can be lazy because of an applied EntityGraph
 		final int propertyIndex = getPropertyIndex( fieldName );
-		final var lazyLoanPlan =
-				getOrCreateLazyLoadPlan( fieldName,
-						List.of( getAttributeMapping( propertyIndex ) ) );
+		final List<ModelPart> partsToSelect = List.of( getAttributeMapping( propertyIndex ) );
 		try {
-			final var results = lazyLoanPlan.load( id, session );
+			final var results = entry.getEntityKey().isTemporal()
+					? loadHistoricalLazyAttributes( partsToSelect, entry, session )
+					: getOrCreateLazyLoadPlan( fieldName, partsToSelect ).load( id, session );
 			if ( results == null ) {
 				throw new ObjectNotFoundException( id, getEntityName() );
 			}
@@ -1962,9 +2018,31 @@ public abstract class AbstractEntityPersister
 				return lazyLoanPlan;
 			}
 		}
-		final var newLazyLoanPlan = createLazyLoanPlan( partsToSelect );
+		final var newLazyLoanPlan = createLazyLoadPlan( partsToSelect, new LoadQueryInfluencers( factory ) );
 		plans.put( fieldName, newLazyLoanPlan );
 		return newLazyLoanPlan;
+	}
+
+	/**
+	 * The value of an attribute whose column is absent: {@code null}, or the
+	 * default for a primitive.
+	 */
+	private static @Nullable Object absentValue(@Nonnull AttributeMapping attributeMapping) {
+		final var propertyAccess = attributeMapping.getPropertyAccess();
+		return propertyAccess != null && propertyAccess.getGetter().getReturnTypeClass().isPrimitive()
+				? attributeMapping.getMappedType().getMappedJavaType().getDefaultValue()
+				: null;
+	}
+
+	@Nullable
+	private Object[] loadHistoricalLazyAttributes(
+			@Nonnull List<ModelPart> partsToSelect,
+			@Nonnull EntityEntry entry,
+			@Nonnull SharedSessionContractImplementor session) {
+		// An all-revisions session can hold snapshots from several changesets.
+		final var influencers = session.getLoadQueryInfluencers();
+		return influencers.withTemporalIdentifier( entry.getEntityKey().getChangesetId(),
+				() -> createLazyLoadPlan( partsToSelect, influencers ).load( entry.getId(), session ) );
 	}
 
 	@Nullable
@@ -3825,6 +3903,9 @@ public abstract class AbstractEntityPersister
 					createGeneratedValuesProcessor( UPDATE, updateGeneratedAttributes );
 		}
 
+		if ( getAuditMapping() != null ) {
+			entityAuditSupport = new EntityAuditSupport( this, getFactory() );
+		}
 		final var legacyIntegration = stateManagement.getLegacyIntegration();
 		insertCoordinator = legacyIntegration.createInsertCoordinator( this );
 		updateCoordinator = legacyIntegration.createUpdateCoordinator( this );
@@ -4552,11 +4633,22 @@ public abstract class AbstractEntityPersister
 			CORE_LOGGER.fetchingEntity( infoString( this, id, getFactory() ) );
 		}
 
+		return loadByKey( this, session, () -> loadWithLoader( id, optionalObject, lockOptions, readOnly, session ) );
+	}
+
+	@Nullable
+	private Object loadWithLoader(
+			@Nonnull Object id,
+			@Nullable Object optionalObject,
+			@Nonnull LockOptions lockOptions,
+			@Nullable Boolean readOnly,
+			@Nonnull SharedSessionContractImplementor session) {
 		final var loader = determineLoaderToUse( session, lockOptions );
 		return optionalObject == null
 				? loader.load( id, lockOptions, readOnly, session )
 				: loader.load( id, optionalObject, lockOptions, readOnly, session );
 	}
+
 
 	@Nonnull
 	protected SingleIdEntityLoader<?> determineLoaderToUse(@Nonnull SharedSessionContractImplementor session, @Nonnull LockOptions lockOptions) {
@@ -4605,7 +4697,10 @@ public abstract class AbstractEntityPersister
 				instanceof EnhancementAsProxyLazinessInterceptor proxyInterceptor ) {
 			final var entityKey = proxyInterceptor.getEntityKey();
 			final Object id = entityKey.getIdentifier();
-			final Object loaded = loadEnhancedEntityUsedAsProxy( entity, session, entityKey );
+			// An enhanced proxy loads at the changeset of its key
+			final Object loaded = session.getLoadQueryInfluencers()
+					.withCapturedTemporalIdentifier( entityKey.getChangesetId(),
+							() -> loadEnhancedEntityUsedAsProxy( entity, session, entityKey ) );
 			if ( loaded == null ) {
 				final var persistenceContext = session.getPersistenceContext();
 				persistenceContext.removeEntry( entity );
@@ -4659,7 +4754,7 @@ public abstract class AbstractEntityPersister
 	@Nonnull
 	@Override
 	public List<?> multiLoad(@Nonnull Object[] ids, @Nonnull SharedSessionContractImplementor session, @Nonnull MultiIdLoadOptions loadOptions) {
-		return multiIdLoader.load( ids, loadOptions, session );
+		return loadByKey( this, session, () -> multiIdLoader.load( ids, loadOptions, session ) );
 	}
 
 	@Override
@@ -6040,6 +6135,28 @@ public abstract class AbstractEntityPersister
 		if ( auxiliaryMapping instanceof SoftDeleteMapping && rootClass.getCustomSQLDelete() != null ) {
 			throw new UnsupportedMappingException( "Entity may not define both @SoftDelete and @SQLDelete" );
 		}
+		if ( ( auxiliaryMapping instanceof TemporalMapping || auxiliaryMapping instanceof AuditMapping )
+				&& hasCustomSql( bootEntityDescriptor ) ) {
+			throw new UnsupportedMappingException( "Entity '" + getEntityName() + "' is "
+					+ ( auxiliaryMapping instanceof AuditMapping ? "audited" : "temporal" )
+					+ " and so may not be annotated '@SQLInsert', '@SQLUpdate', or '@SQLDelete'" );
+		}
+	}
+
+	private static boolean hasCustomSql(@Nonnull PersistentClass bootEntityDescriptor) {
+		if ( bootEntityDescriptor.getCustomSQLInsert() != null
+				|| bootEntityDescriptor.getCustomSQLUpdate() != null
+				|| bootEntityDescriptor.getCustomSQLDelete() != null ) {
+			return true;
+		}
+		for ( var join : bootEntityDescriptor.getJoins() ) {
+			if ( join.getCustomSQLInsert() != null
+					|| join.getCustomSQLUpdate() != null
+					|| join.getCustomSQLDelete() != null ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private void initializeNaturalIdMapping
@@ -6873,6 +6990,12 @@ public abstract class AbstractEntityPersister
 	public TemporalMapping getTemporalMapping() {
 		return auxiliaryMapping instanceof TemporalMapping temporalMapping
 				? temporalMapping : null;
+	}
+
+	@Nullable
+	@Override
+	public EntityAuditSupport getEntityAuditSupport() {
+		return entityAuditSupport;
 	}
 
 	@Nullable

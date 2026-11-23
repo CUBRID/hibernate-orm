@@ -69,6 +69,51 @@ public interface PluralAttributeMapping
 			@Nonnull LoadQueryInfluencers influencers,
 			@Nonnull SqlAliasBaseGenerator sqlAliasBaseGenerator);
 
+	/// Whether reading collection rows needs restrictions beyond the plain collection table.
+	default boolean hasRowRestrictions(@Nonnull LoadQueryInfluencers influencers) {
+		return hasWhereRestrictions() || isAffectedByEnabledFilters( influencers, true );
+	}
+
+	/// Whether these session settings change the visibility of collection rows.
+	default boolean isAffectedByRowRestrictions(@Nonnull LoadQueryInfluencers influencers, boolean onlyLoadByKeyFilters) {
+		return isAffectedByEnabledFilters( influencers, onlyLoadByKeyFilters );
+	}
+
+	/// Applies the restrictions on the rows of this collection, read as the root of a
+	/// query, as a load of the collection reads it. A join and a subquery apply the same
+	/// restrictions, in [#createTableGroupJoin] and [#createSubqueryRootTableGroup].
+	default void applyCollectionRestrictions(
+			@Nonnull TableGroup tableGroup,
+			@Nonnull Consumer<Predicate> predicateConsumer,
+			@Nonnull SqlAstCreationState creationState) {
+		final var influencers = creationState.getLoadQueryInfluencers();
+		final var filters = influencers.getEnabledFilters();
+		applyBaseRestrictions( predicateConsumer, tableGroup, true, filters, false, null, creationState );
+		applyBaseManyToManyRestrictions( predicateConsumer, tableGroup, true, filters, null, creationState );
+		applyAuxiliaryRestrictions( tableGroup, predicateConsumer::accept, influencers, creationState.getSqlAliasBaseGenerator() );
+	}
+
+	/**
+	 * Create the root table group of a subquery over this collection, belonging
+	 * to the table group with the parent of the given path in an enclosing query,
+	 * and apply the restrictions which a join of the collection would be subject to.
+	 */
+	@Nonnull
+	default TableGroup createSubqueryRootTableGroup(
+			@Nonnull NavigablePath navigablePath,
+			@Nonnull PredicateConsumer predicateConsumer,
+			@Nonnull SqlAstCreationState creationState) {
+		final var tableGroup = createRootTableGroup(
+				true,
+				navigablePath,
+				null,
+				null,
+				() -> predicateConsumer::applyPredicate,
+				creationState
+		);
+		applyCollectionRestrictions( tableGroup, predicateConsumer::applyPredicate, creationState );
+		return tableGroup;
+	}
 	interface IndexMetadata {
 		@Nullable
 		CollectionPart getIndexDescriptor();
@@ -110,6 +155,11 @@ public interface PluralAttributeMapping
 	@Nullable
 	@Incubating(since = "5.4")
 	default AuditMapping getAuditMapping() {
+		return null;
+	}
+
+	@Nullable
+	default AuxiliaryMapping getAuxiliaryMapping() {
 		return null;
 	}
 
