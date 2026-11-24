@@ -265,17 +265,7 @@ public abstract class AbstractOneToManyDecomposer implements OneToManyDecomposer
 		}
 		else if ( !persister.isAffectedByEnabledFilters( session ) && collection.empty() ) {
 			if ( !action.isEmptySnapshot() ) {
-				final var removeOperation = buildRemoveOperation( persister.getCollectionTableDescriptor() );
-				if ( removeOperation != null ) {
-					operations.add( new FlushOperation(
-							persister.getCollectionTableDescriptor(),
-							MutationKind.UPDATE,
-							removeOperation,
-							new RemoveBindPlan( key, persister, mutationPlanContributor ),
-							calculateOrdinal( ordinalBase, Slot.DELETE ),
-							"RemoveAllRows(" + persister.getRolePath() + ")"
-					) );
-				}
+				planRemoveAll( key, ordinalBase, operations::add );
 			}
 		}
 		else {
@@ -367,14 +357,25 @@ public abstract class AbstractOneToManyDecomposer implements OneToManyDecomposer
 		);
 	}
 
-	private void planRemoveAll(
+	/// Plans the removal of every row of the collection as part of an update,
+	/// with one operation for each table which holds its rows.
+	protected void planRemoveAll(
 			Object key,
 			int ordinalBase,
 			Consumer<FlushOperation> operationConsumer) {
-		final var removeOperation = buildRemoveOperation( persister.getCollectionTableDescriptor() );
+		final var tableDescriptor = persister.getCollectionTableDescriptor();
+		planRemoveAll( tableDescriptor, buildRemoveOperation( tableDescriptor ), key, ordinalBase, operationConsumer );
+	}
+
+	protected final void planRemoveAll(
+			TableDescriptor tableDescriptor,
+			MutationOperation removeOperation,
+			Object key,
+			int ordinalBase,
+			Consumer<FlushOperation> operationConsumer) {
 		if ( removeOperation != null ) {
 			operationConsumer.accept( new FlushOperation(
-					persister.getCollectionTableDescriptor(),
+					tableDescriptor,
 					MutationKind.UPDATE,
 					removeOperation,
 					new RemoveBindPlan( key, persister, mutationPlanContributor ),
@@ -425,9 +426,9 @@ public abstract class AbstractOneToManyDecomposer implements OneToManyDecomposer
 		}
 		for ( var addition : changeSet.additions() ) {
 			final Object rowValue = map
-					? new SimpleImmutableEntry<>( addition.index(), addition.element() )
+					? new SimpleImmutableEntry<>( addition.rowKey(), addition.element() )
 					: addition.element();
-			final int rowPosition = addition.index() instanceof Number number ? number.intValue() : -1;
+			final int rowPosition = map ? -1 : addition.bindingPosition();
 			planInsert(
 					rowValue,
 					rowPosition,
@@ -448,7 +449,7 @@ public abstract class AbstractOneToManyDecomposer implements OneToManyDecomposer
 							jdbcOperations.tableDescriptor(),
 							jdbcOperations.updateIndexPlan(),
 							calculateOrdinal( ordinalBase, Slot.WRITEINDEX ),
-							"WriteIndex[" + addition.index() + "](" + persister.getRolePath() + ")",
+							"WriteIndex[" + addition.rowKey() + "](" + persister.getRolePath() + ")",
 							operationConsumer
 					);
 				}
@@ -466,9 +467,11 @@ public abstract class AbstractOneToManyDecomposer implements OneToManyDecomposer
 		final var additions = new ArrayList<>( changeSet.additions() );
 		for ( var valueChange : changeSet.valueChanges() ) {
 			if ( valueChange.oldValue() != null ) {
-				removals.add( new CollectionChangeSet.Removal( valueChange.oldValue(), valueChange.index() ) );
+				removals.add( valueChange.replacedRow() );
 			}
-			additions.add( new CollectionChangeSet.Addition( valueChange.newValue(), valueChange.index() ) );
+			additions.add( new CollectionChangeSet.Addition(
+					valueChange.newValue(), valueChange.rowKey(), valueChange.entryPosition()
+			) );
 		}
 		return new CollectionChangeSet( removals, additions, changeSet.shifts(), List.of() );
 	}
@@ -542,7 +545,7 @@ public abstract class AbstractOneToManyDecomposer implements OneToManyDecomposer
 			}
 		}
 		for ( var addition : changeSet.additions() ) {
-			if ( !( addition.index() instanceof Number ) ) {
+			if ( !( addition.rowKey() instanceof Number ) ) {
 				return false;
 			}
 		}
@@ -758,17 +761,17 @@ public abstract class AbstractOneToManyDecomposer implements OneToManyDecomposer
 								collection,
 								key,
 								addition.element(),
-								( (Number) addition.index() ).intValue()
+								addition.bindingPosition()
 						),
 						insertOrdinal,
-						"InsertRow[" + addition.index() + "](" + persister.getRolePath() + ")"
+						"InsertRow[" + addition.rowKey() + "](" + persister.getRolePath() + ")"
 				) );
 				contributeAdditionalInsert(
 						jdbcOperations,
 						collection,
 						key,
 						addition.element(),
-						( (Number) addition.index() ).intValue(),
+						addition.bindingPosition(),
 						ordinalBase,
 						session,
 						operationConsumer
@@ -779,11 +782,11 @@ public abstract class AbstractOneToManyDecomposer implements OneToManyDecomposer
 						collection,
 						key,
 						addition.element(),
-						( (Number) addition.index() ).intValue(),
+						addition.bindingPosition(),
 						jdbcOperations.tableDescriptor(),
 						jdbcOperations.updateIndexPlan(),
 						writeIndexOrdinal,
-						"WriteIndex[" + addition.index() + "](" + persister.getRolePath() + ")",
+						"WriteIndex[" + addition.rowKey() + "](" + persister.getRolePath() + ")",
 						operationConsumer
 				);
 			}
