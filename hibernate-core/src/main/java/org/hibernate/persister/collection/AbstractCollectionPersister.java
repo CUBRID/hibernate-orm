@@ -29,6 +29,7 @@ import org.hibernate.cache.spi.entry.StructuredMapCacheEntry;
 import org.hibernate.cache.spi.entry.UnstructuredCacheEntry;
 import org.hibernate.collection.spi.CollectionSemantics;
 import org.hibernate.collection.spi.PersistentCollection;
+import org.hibernate.engine.spi.EntityKey;
 import org.hibernate.dialect.Dialect;
 import org.hibernate.engine.jdbc.mutation.JdbcValueBindings;
 import org.hibernate.engine.jdbc.mutation.ParameterUsage;
@@ -214,6 +215,8 @@ public abstract class AbstractCollectionPersister
 	protected final boolean[] indexColumnIsGettable;
 	@Nullable
 	protected final boolean[] indexColumnIsSettable;
+	@Nullable
+	protected final boolean[] indexColumnIsUpdatable;
 	protected final String[] elementColumnNames;
 	protected final String[] elementColumnWriters;
 	protected final String[] elementColumnReaders;
@@ -441,6 +444,7 @@ public abstract class AbstractCollectionPersister
 			indexFormulas = new String[indexSpan];
 			indexColumnIsGettable = new boolean[indexSpan];
 			indexColumnIsSettable = new boolean[indexSpan];
+			indexColumnIsUpdatable = new boolean[indexSpan];
 			indexColumnAliases = new String[indexSpan];
 			int i = 0;
 			boolean hasFormula = false;
@@ -464,6 +468,7 @@ public abstract class AbstractCollectionPersister
 					indexColumnNames[i] = indexColumn.getQuotedName( dialect );
 					indexColumnIsGettable[i] = true;
 					indexColumnIsSettable[i] = indexColumnInsertability[i] || indexColumnUpdatability[i];
+					indexColumnIsUpdatable[i] = indexColumnUpdatability[i];
 				}
 				i++;
 			}
@@ -473,6 +478,7 @@ public abstract class AbstractCollectionPersister
 			indexContainsFormula = false;
 			indexColumnIsGettable = null;
 			indexColumnIsSettable = null;
+			indexColumnIsUpdatable = null;
 			indexFormulaTemplates = null;
 			indexFormulas = null;
 			indexType = null;
@@ -899,9 +905,19 @@ public abstract class AbstractCollectionPersister
 	@Nullable
 	private CollectionLoader resolveSubSelectLoader(@Nonnull Object key, @Nonnull SharedSessionContractImplementor session) {
 		final var persistenceContext = session.getPersistenceContextInternal();
-		final var subselect =
-				persistenceContext.getBatchFetchQueue()
-						.getSubselect( session.generateEntityKey( key, getOwnerEntityPersister() ) );
+		final EntityKey ownerKey;
+		if ( getCollectionType().useLHSPrimaryKey() ) {
+			ownerKey = session.generateEntityKey( key, getOwnerEntityPersister() );
+		}
+		else {
+			final var collection = persistenceContext.getCollection( session.generateCollectionKey( this, key ) );
+			final var ownerEntry = collection == null ? null : persistenceContext.getEntry( collection.getOwner() );
+			if ( ownerEntry == null ) {
+				return null;
+			}
+			ownerKey = ownerEntry.getEntityKey();
+		}
+		final var subselect = persistenceContext.getBatchFetchQueue().getSubselect( ownerKey );
 		if ( subselect == null ) {
 			return null;
 		}

@@ -64,6 +64,7 @@ import org.hibernate.sql.results.spi.LoadContexts;
 import jakarta.annotation.Nonnull;
 import jakarta.annotation.Nullable;
 
+import static org.hibernate.bytecode.enhance.spi.LazyPropertyInitializer.UNFETCHED_PROPERTY;
 import static org.hibernate.metamodel.mapping.internal.CurrentState.keyChangesetId;
 import static java.util.Collections.emptyIterator;
 import static java.util.Collections.emptyMap;
@@ -320,6 +321,7 @@ class StatefulPersistenceContext implements PersistenceContext {
 	@Override
 	public void afterTransactionCompletion() {
 		cleanUpInsertedKeysAfterTransaction();
+		updatedTemporalRevisions = null;
 		// Downgrade locks
 		entityEntryContext.downgradeLocks();
 	}
@@ -950,67 +952,62 @@ class StatefulPersistenceContext implements PersistenceContext {
 	public Object getCollectionOwner(
 			@Nonnull Object key,
 			@Nonnull CollectionPersister collectionPersister) throws MappingException {
-		// todo : we really just need to add a split in the notions of:
-		//		1) collection key
-		//		2) collection owner key
-		// These two are not always the same.
-		// Same is true in the case of ToOne associations with property-ref
+		return getCollectionOwner( key, collectionPersister, null );
+	}
+
+	@Override
+	@Nullable
+	public Object getCollectionOwner(
+			@Nonnull Object key,
+			@Nonnull CollectionPersister collectionPersister,
+			@Nullable PersistentCollection<?> collection) {
 		final var ownerPersister = collectionPersister.getOwnerEntityPersister();
-		if ( ownerPersister.getIdentifierType().getReturnedClass().isInstance( key ) ) {
-			return getEntity( session.generateEntityKey( key, collectionPersister.getOwnerEntityPersister() ) );
+		final String property = collectionPersister.getCollectionType().getLHSPropertyName();
+		if ( property == null ) {
+			return getEntity( session.generateEntityKey( key, ownerPersister ) );
 		}
-		// we have a property-ref type mapping for the collection key.
-		// But that could show up a few ways here:
-		//
-		//		1) The incoming key could be the entity itself...
-		else if ( ownerPersister.isInstance( key ) ) {
-			final Object ownerId = ownerPersister.getIdentifier( key, session );
-			return ownerId == null ? null
-					: getEntity( session.generateEntityKey( ownerId, ownerPersister ) );
+		if ( ownerPersister.isInstance( key ) ) {
+			final Object id = ownerPersister.getIdentifier( key, session );
+			return id == null ? null : getEntity( session.generateEntityKey( id, ownerPersister ) );
 		}
-		else {
-			final var collectionType = collectionPersister.getCollectionType();
-			//		2) The incoming key is most likely the collection key which we need to resolve to the owner key
-			//			find the corresponding owner instance
-			//			a) try by EntityUniqueKey
-			if ( collectionType.getLHSPropertyName() != null ) {
-				final Object owner = getEntity(
-						new EntityUniqueKey(
-								ownerPersister.getEntityName(),
-								collectionType.getLHSPropertyName(),
-								key,
-								collectionPersister.getKeyType(),
-								keyChangesetId( session, ownerPersister ),
-								session.getFactory()
-						)
-				);
-				if ( owner != null ) {
-					return owner;
-				}
-				else {
-					//		b) try by EntityKey, which means we need to resolve owner-key -> collection-key
-					//			IMPL NOTE: yes if we get here this impl is very non-performant, but PersistenceContext
-					//					was never designed to handle this case; adding that capability for real means splitting
-					//					the notions of:
-					//						1) collection key
-					//						2) collection owner key
-					// 					these 2 are not always the same (same is true in the case of ToOne associations with
-					// 					property-ref).  That would require changes to (at least) CollectionEntry and quite
-					//					probably changes to how the sql for collection initializers are generated
-					//
-					//			We could also possibly see if the referenced property is a natural id since we already have caching
-					//			in place of natural id snapshots.  But really it's better to just do it the right way ^^ if we start
-					// 			going that route
-					final Object ownerId =
-							ownerPersister.getIdByUniqueKey( key, collectionType.getLHSPropertyName(), session );
-					return getEntity( session.generateEntityKey( ownerId, ownerPersister ) );
-				}
-			}
-			else {
-				// as a last resort this is what the old code did...
-				return getEntity( session.generateEntityKey( key, collectionPersister.getOwnerEntityPersister() ) );
-			}
+		final Object owner = getEntity( new EntityUniqueKey(
+				ownerPersister.getRootEntityName(), property, key, collectionPersister.getKeyType(),
+				keyChangesetId( session, ownerPersister ), session.getFactory() ) );
+		if ( owner != null ) {
+			return owner;
 		}
+		final var wrapper = collection != null ? collection
+				: getCollection( session.generateCollectionKey( collectionPersister, key ) );
+		final var linkedOwner = getOwnerFromCollection( wrapper, collectionPersister, property, key );
+		if ( linkedOwner != null ) {
+			return linkedOwner;
+		}
+		final Object id = ownerPersister.getIdByUniqueKey( key, property, session );
+		return id == null ? null : getEntity( session.generateEntityKey( id, ownerPersister ) );
+	}
+
+	private @Nullable Object getOwnerFromCollection(
+			@Nullable PersistentCollection<?> collection, CollectionPersister persister, String property, Object key) {
+		if ( collection == null ) {
+			return null;
+		}
+		final Object owner = collection.getOwner();
+		final var entry = owner == null ? null : getEntry( owner );
+		if ( entry == null ) {
+			return null;
+		}
+		final var keyType = persister.getKeyType();
+		final Object loadedKey = entry.getLoadedValue( property );
+		if ( loadedKey != null && loadedKey != UNFETCHED_PROPERTY && keyType.isEqual( key, loadedKey ) ) {
+			return owner;
+		}
+		// The original wrapper can identify its owner even when the key property is unfetched.
+		if ( persister.getRole().equals( collection.getRole() )
+				&& entry.getLoadedValue( persister.getAttributeMapping().getAttributeName() ) == collection
+				&& keyType.isEqual( key, collection.getKey() ) ) {
+			return owner;
+		}
+		return null;
 	}
 
 	@Override
@@ -1024,7 +1021,8 @@ class StatefulPersistenceContext implements PersistenceContext {
 			// TODO: an alternative is to check if the owner has changed; if it hasn't then
 			// return collection.getOwner()
 			final Object entityId = getLoadedCollectionOwnerIdOrNull( collectionEntry );
-			return entityId != null ? getCollectionOwner( entityId, collectionEntry.getLoadedPersister() ) : null;
+			return entityId == null ? null : getEntity( session.generateEntityKey(
+					entityId, collectionEntry.getLoadedPersister().getOwnerEntityPersister() ) );
 		}
 	}
 
@@ -1120,6 +1118,7 @@ class StatefulPersistenceContext implements PersistenceContext {
 	private void addCollection(PersistentCollection<?> coll, CollectionEntry entry, Object key) {
 		putCollectionEntry( coll, entry );
 		final var collectionKey = session.generateCollectionKey( entry.getLoadedPersister(), key );
+		entry.setLoadedChangesetId( collectionKey.getChangesetId() );
 		final var old = addCollectionByKey( collectionKey, coll );
 		if ( old != null ) {
 			if ( old == coll ) {
@@ -1861,20 +1860,9 @@ class StatefulPersistenceContext implements PersistenceContext {
 	}
 
 	@Override
-	public void replaceEntityEntryRowId(@Nonnull Object entity, @Nonnull Object rowId) {
-		final var oldEntry = entityEntryContext.removeEntityEntry( entity );
-		final var entityEntry = addEntry(
-				entity,
-				oldEntry.getStatus(),
-				oldEntry.getLoadedState(),
-				rowId,
-				oldEntry.getId(),
-				oldEntry.getVersion(),
-				oldEntry.getLockMode(),
-				oldEntry.isExistsInDatabase(),
-				oldEntry.getPersister()
-		);
-		getEntityHolder( oldEntry.getEntityKey() ).setEntityEntry( entityEntry );
+	public void replaceEntityEntryRowId(@Nonnull Object entity, @Nullable Object rowId) {
+		final var entry = (EntityEntryImpl) getEntry( entity );
+		entry.setRowId( rowId );
 	}
 
 	/**
@@ -2126,6 +2114,11 @@ class StatefulPersistenceContext implements PersistenceContext {
 					context.putCollectionEntry( collection,
 							CollectionEntry.deserialize( ois, session ) );
 				}
+				context.collectionsByKey.forEach( (key, collection) -> {
+					if ( key.isTemporal() ) {
+						context.getCollectionEntry( collection ).setLoadedChangesetId( key.getChangesetId() );
+					}
+				} );
 			}
 
 			{
@@ -2190,6 +2183,20 @@ class StatefulPersistenceContext implements PersistenceContext {
 	// INSERTED KEYS HANDLING ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 	private HashMap<String,HashSet<Object>> insertedKeysMap;
+	private HashSet<EntityKey> updatedTemporalRevisions;
+
+	@Override
+	public void registerUpdatedTemporalRevision(EntityKey key) {
+		if ( updatedTemporalRevisions == null ) {
+			updatedTemporalRevisions = new HashSet<>();
+		}
+		updatedTemporalRevisions.add( key );
+	}
+
+	@Override
+	public boolean wasTemporalRevisionUpdated(EntityKey key) {
+		return updatedTemporalRevisions != null && updatedTemporalRevisions.contains( key );
+	}
 
 	@Override
 	public void registerInsertedKey(@Nonnull EntityPersister persister, @Nonnull Object id) {
