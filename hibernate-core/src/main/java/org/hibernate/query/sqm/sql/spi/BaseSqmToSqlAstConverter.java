@@ -127,6 +127,7 @@ import org.hibernate.sql.ast.spi.result.DomainResultProducer;
 import org.hibernate.query.sqm.sql.internal.EmbeddableValuedExpression;
 import org.hibernate.query.sqm.sql.internal.EmbeddableValuedPathInterpretation;
 import org.hibernate.query.sqm.sql.internal.EntityValuedPathInterpretation;
+import org.hibernate.query.sqm.sql.internal.ForeignKeyAssignment;
 import org.hibernate.query.sqm.sql.internal.NonAggregatedCompositeValuedPathInterpretation;
 import org.hibernate.query.sqm.sql.internal.PluralValuedSimplePathInterpretation;
 import org.hibernate.query.sqm.sql.internal.SqlAstProcessingStateImpl;
@@ -450,6 +451,7 @@ import static org.hibernate.query.sqm.BinaryArithmeticOperator.SUBTRACT;
 import static org.hibernate.query.sqm.UnaryArithmeticOperator.UNARY_MINUS;
 import static org.hibernate.query.sqm.internal.SqmMappingModelHelper.resolveExplicitTreatTarget;
 import static org.hibernate.query.sqm.internal.SqmMappingModelHelper.resolveMappingModelExpressible;
+import static org.hibernate.query.sqm.internal.SqmUtil.canUseForeignKey;
 import static org.hibernate.query.sqm.internal.SqmUtil.hasRestrictedTarget;
 import static org.hibernate.query.sqm.internal.SqmUtil.isFkOptimizationAllowed;
 import static org.hibernate.query.sqm.sql.spi.AggregateColumnAssignmentHandler.forEntityDescriptor;
@@ -1004,6 +1006,8 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 				assignedPathInterpretation =
 						(PathInterpretation<?>)
 								visitWithRequiredResult( sqmAssignment.getTargetPath() );
+				ForeignKeyAssignment.verifyAssignable( sqmAssignment.getTargetPath(),
+						assignedPathInterpretation.getExpressionType(), getFromClauseIndex() );
 			}
 			finally {
 				currentClauseStack.pop();
@@ -4292,7 +4296,7 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 							parentTableGroup,
 							null,
 							null,
-							allowLeftJoins ? sqlAstJoinType : null,
+							allowLeftJoins && parentTableGroup.canUseLeftJoins() ? sqlAstJoinType : null,
 							false,
 							false,
 							this
@@ -4777,14 +4781,17 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 
 	@Override
 	public Expression visitBasicValuedPath(SqmBasicValuedSimplePath<?> sqmPath) {
-		final var path = prepareReusablePath(
-				sqmPath,
-				() -> BasicValuedPathInterpretation.from(
+		final var foreignKey = ForeignKeyAssignment.resolve( sqmPath, this );
+		final BasicValuedPathInterpretation<?> path = foreignKey != null
+				? BasicValuedPathInterpretation.from( sqmPath, foreignKey, this )
+				: prepareReusablePath(
 						sqmPath,
-						this,
-						jpaQueryComplianceEnabled
-				)
-		);
+						() -> BasicValuedPathInterpretation.from(
+								sqmPath,
+								this,
+								jpaQueryComplianceEnabled
+						)
+				);
 		Expression result = path;
 		if ( isDuration( sqmPath.getNodeType() ) ) {
 
@@ -4869,6 +4876,10 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 
 	@Override
 	public Expression visitEmbeddableValuedPath(SqmEmbeddedValuedSimplePath<?> sqmPath) {
+		final var foreignKey = ForeignKeyAssignment.resolve( sqmPath, this );
+		if ( foreignKey != null ) {
+			return EmbeddableValuedPathInterpretation.from( sqmPath, foreignKey, this );
+		}
 		return withTreatRestriction(
 				prepareReusablePath(
 						sqmPath,
@@ -4907,6 +4918,10 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 	@Override
 	public Expression visitEntityValuedPath(SqmEntityValuedSimplePath<?> sqmPath) {
 		final var inferredMapping = getInferredValueMapping();
+		final var foreignKey = inferredMapping == null ? ForeignKeyAssignment.resolve( sqmPath, this ) : null;
+		if ( foreignKey != null ) {
+			return EntityValuedPathInterpretation.from( sqmPath, foreignKey, this );
+		}
 		final var fromClauseIndex = getFromClauseIndex();
 		if ( inferredMapping instanceof EntityMappingType
 				&& resolveMappingModelExpressible( sqmPath, getMappingMetamodel(), fromClauseIndex::findTableGroup )
@@ -4917,9 +4932,24 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 			return withTreatRestriction( associationIdentifier( sqmPath.getNavigablePath(), owner, toOne ), sqmPath );
 		}
 		return withTreatRestriction(
-				prepareReusablePath( sqmPath, () -> EntityValuedPathInterpretation.from( sqmPath, inferredMapping, this ) ),
+				prepareReusablePath(
+						sqmPath,
+						fromClauseIndexStack.getCurrent(),
+						() -> EntityValuedPathInterpretation.from( sqmPath, inferredMapping, this ),
+						isGroupedOrSortedToOne( sqmPath, fromClauseIndex )
+				),
 				sqmPath
 		);
+	}
+
+	/// Grouping or sorting by a to-one must not lose rows, so the target of the
+	/// association may only be left joined, or not joined at all.
+	private boolean isGroupedOrSortedToOne(SqmEntityValuedSimplePath<?> sqmPath, FromClauseIndex fromClauseIndex) {
+		final var currentClause = getCurrentClauseStack().getCurrent();
+		return ( currentClause == Clause.GROUP || currentClause == Clause.ORDER )
+			&& resolveMappingModelExpressible( sqmPath, getMappingMetamodel(), fromClauseIndex::findTableGroup )
+					instanceof ToOneAttributeMapping toOne
+			&& toOne.getSideNature() == ForeignKeyDescriptor.Nature.KEY;
 	}
 
 	/// Resolve the identifier using the unique key stored on the owner. Keep the lookup in the
@@ -8345,7 +8375,7 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 		final var mapping = resolveMappingModelExpressible( path, getMappingMetamodel(),
 				getFromClauseIndex()::findTableGroup );
 		return mapping instanceof ToOneAttributeMapping toOne && !toOne.isReferenceToPrimaryKey()
-				&& toOne.isFkOptimizationAllowed() && !hasRestrictedTarget( toOne, this ) ? toOne : null;
+				&& canUseForeignKey( toOne, this ) ? toOne : null;
 	}
 
 	private Expression comparisonKey(SqmExpression<?> operand, ToOneAttributeMapping association) {
@@ -8818,7 +8848,7 @@ public abstract class BaseSqmToSqlAstConverter<T extends Statement> extends Base
 				? entity : determineRequiredMapping( element, getFromClauseIndex() );
 		if ( required == null
 				|| required instanceof ToOneAttributeMapping toOne
-						&& toOne.isFkOptimizationAllowed() && !hasRestrictedTarget( toOne, this )
+						&& canUseForeignKey( toOne, this )
 						&& toOne.getForeignKeyDescriptor().getTargetPart() == association.getForeignKeyDescriptor().getTargetPart() ) {
 			return comparisonKey( element, association );
 		}

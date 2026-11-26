@@ -9,6 +9,7 @@ import org.hibernate.metamodel.spi.RuntimeModelCreationContext;
 import org.hibernate.temporal.TemporalTableStrategy;
 import org.hibernate.engine.spi.LoadQueryInfluencers;
 import org.hibernate.mapping.BasicValue;
+import org.hibernate.mapping.PersistentClass;
 import org.hibernate.mapping.Stateful;
 import org.hibernate.metamodel.mapping.EntityMappingType;
 import org.hibernate.metamodel.mapping.JdbcMapping;
@@ -41,6 +42,8 @@ import org.hibernate.sql.exec.internal.TemporalJdbcParameter;
 import org.hibernate.sql.ast.spi.model.builder.MutationGroupBuilder;
 import org.hibernate.sql.ast.spi.model.builder.TableInsertBuilder;
 
+import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -60,6 +63,8 @@ import static org.hibernate.query.sqm.ComparisonOperator.LESS_THAN_OR_EQUAL;
  */
 public class TemporalMappingImpl implements TemporalMapping, LegacyAuxiliaryMutationSupport {
 	private final String tableName;
+	/// The history table expression for each table expression, when each class has its own history table.
+	private final Map<String, String> historyTables;
 	private final SelectableMapping startingColumnMapping;
 	private final SelectableMapping endingColumnMapping;
 	private final JdbcMapping jdbcMapping;
@@ -71,7 +76,16 @@ public class TemporalMappingImpl implements TemporalMapping, LegacyAuxiliaryMuta
 			Stateful bootMapping,
 			String tableName,
 			MappingModelCreationProcess creationProcess) {
+		this( bootMapping, tableName, Map.of(), creationProcess );
+	}
+
+	public TemporalMappingImpl(
+			Stateful bootMapping,
+			String tableName,
+			Map<String, String> historyTables,
+			MappingModelCreationProcess creationProcess) {
 		this.tableName = tableName;
+		this.historyTables = historyTables;
 
 		final var creationContext = creationProcess.getCreationContext();
 		temporalTableStrategy =
@@ -150,6 +164,32 @@ public class TemporalMappingImpl implements TemporalMapping, LegacyAuxiliaryMuta
 	@Override
 	public String getTableName() {
 		return tableName;
+	}
+
+	@Nonnull
+	@Override
+	public String resolveTableName(@Nonnull String originalTableName) {
+		return historyTables.isEmpty()
+				? tableName
+				: historyTables.getOrDefault( originalTableName, originalTableName );
+	}
+
+	@Nonnull
+	@Override
+	public TemporalMapping forSubclass(
+			@Nonnull EntityPersister subclassPersister,
+			@Nonnull PersistentClass subclass,
+			@Nonnull MappingModelCreationProcess creationProcess) {
+		final String historyTable = historyTables.get( subclassPersister.getIdentifierTableName() );
+		return historyTable == null ? this
+				: new TemporalMappingImpl( subclass.getRootClass(), historyTable, historyTables, creationProcess );
+	}
+
+	@Nonnull
+	@Override
+	public List<String> getExtraSelectExpressions() {
+		return historyTables.isEmpty() ? List.of() : List.of(
+				startingColumnMapping.getSelectionExpression(), endingColumnMapping.getSelectionExpression() );
 	}
 
 	@Nonnull

@@ -14,9 +14,11 @@ import org.hibernate.engine.jdbc.mutation.ParameterUsage;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.engine.spi.SharedSessionContractImplementor;
 import org.hibernate.persister.entity.EntityPersister;
+import org.hibernate.persister.entity.mutation.PartitionKeyValue;
 
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.util.List;
 
 /// Specialized BindPlan for soft delete operations.
 ///
@@ -30,6 +32,7 @@ public class EntitySoftDeleteBindPlan implements BindPlan, OperationResultChecke
 	private final Object identifier;
 	private final Object version;
 	private final Object[] loadedState;
+	private final List<PartitionKeyValue> partitionKeys;
 	private final OptimisticLockStyle effectiveOptLockStyle;
 
 	public EntitySoftDeleteBindPlan(
@@ -38,12 +41,14 @@ public class EntitySoftDeleteBindPlan implements BindPlan, OperationResultChecke
 			Object identifier,
 			Object version,
 			Object[] loadedState,
+			List<PartitionKeyValue> partitionKeys,
 			OptimisticLockStyle effectiveOptLockStyle) {
 		this.tableDescriptor = tableDescriptor;
 		this.entityPersister = entityPersister;
 		this.identifier = identifier;
 		this.version = version;
 		this.loadedState = loadedState;
+		this.partitionKeys = partitionKeys;
 		this.effectiveOptLockStyle = effectiveOptLockStyle;
 	}
 
@@ -75,10 +80,9 @@ public class EntitySoftDeleteBindPlan implements BindPlan, OperationResultChecke
 			applyNonVersionOptLocking( valueBindings, session );
 		}
 
-		// Apply partitioned selection restrictions if needed
-		if ( entityPersister.hasPartitionedSelectionMapping() && loadedState != null ) {
-			applyPartitionedSelectionRestrictions( valueBindings, session );
-		}
+		PartitionKeyValue.bindRestrictions(
+				partitionKeys, tableDescriptor.name(), valueBindings, flushOperation.getJdbcOperation()
+		);
 	}
 
 	private void breakDownKeyJdbcValue(
@@ -104,7 +108,7 @@ public class EntitySoftDeleteBindPlan implements BindPlan, OperationResultChecke
 		if ( versionMapping == null ) {
 			return;
 		}
-		if ( tableDescriptor.name().equals( versionMapping.getContainingTableExpression() ) ) {
+		if ( tableDescriptor.name().equals( entityPersister.physicalTableNameForMutation( versionMapping ) ) ) {
 			versionMapping.decompose(
 					version,
 					0,
@@ -149,41 +153,6 @@ public class EntitySoftDeleteBindPlan implements BindPlan, OperationResultChecke
 					},
 					session
 			);
-		}
-	}
-
-	protected void applyPartitionedSelectionRestrictions(
-			JdbcValueBindings jdbcValueBindings,
-			SharedSessionContractImplementor session) {
-		for ( int i = 0; i < tableDescriptor.attributes().size(); i++ ) {
-			var attribute = tableDescriptor.attributes().get( i );
-
-			attribute.forEachSelectable( (selectionIndex, selectableMapping) -> {
-				if ( selectableMapping.isPartitioned() ) {
-					final String tableNameForMutation = entityPersister.physicalTableNameForMutation( selectableMapping );
-					final Object value = loadedState != null
-							? loadedState[attribute.getStateArrayPosition()]
-							: null;
-					if ( value != null ) {
-						attribute.decompose(
-								value,
-								0,
-								jdbcValueBindings,
-								null,
-								(valueIndex, bindings, noop, jdbcValue, selectable) -> {
-									if ( selectable.isPartitioned() ) {
-										bindings.bindValue(
-												jdbcValue,
-												( selectable.getSelectionExpression() ),
-												ParameterUsage.RESTRICT
-										);
-									}
-								},
-								session
-						);
-					}
-				}
-			} );
 		}
 	}
 

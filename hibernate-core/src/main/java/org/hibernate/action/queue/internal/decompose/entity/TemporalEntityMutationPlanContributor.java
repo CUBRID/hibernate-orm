@@ -17,12 +17,16 @@ import org.hibernate.engine.spi.SharedSessionContractImplementor;
 import org.hibernate.generator.BeforeExecutionGenerator;
 import org.hibernate.metamodel.mapping.TemporalMapping;
 import org.hibernate.persister.entity.EntityPersister;
+import org.hibernate.persister.entity.mutation.PartitionKeyValue;
 import org.hibernate.sql.ast.spi.query.expression.ColumnReference;
 import org.hibernate.sql.spi.mutation.MutationOperation;
+import org.hibernate.sql.spi.mutation.TableMapping;
 import org.hibernate.sql.ast.spi.model.MutatingTableReference;
 import org.hibernate.sql.ast.spi.model.builder.TableUpdateBuilder;
 import org.hibernate.sql.ast.spi.model.builder.TableUpdateBuilderStandard;
 
+import static org.hibernate.action.queue.internal.decompose.entity.DecompositionHelper.initializeStateForRevisionInsert;
+import static org.hibernate.action.queue.internal.decompose.entity.DecompositionHelper.revisionInsertability;
 import static org.hibernate.action.queue.internal.decompose.entity.EntityTemporalEndBindPlan.isIncludedInOptimisticLock;
 import static org.hibernate.generator.EventType.UPDATE;
 
@@ -35,6 +39,7 @@ public class TemporalEntityMutationPlanContributor implements EntityMutationPlan
 	private final TemporalMapping temporalMapping;
 	private final EntityInsertMutationPlanner insertMutationPlanner;
 	private final MutationOperation staticEndOperation;
+	private final MutationOperation unversionedStaticEndOperation;
 	private final IdentityInsertCommands identityInsertCommands;
 
 	public TemporalEntityMutationPlanContributor(
@@ -48,7 +53,12 @@ public class TemporalEntityMutationPlanContributor implements EntityMutationPlan
 						.getExplicitIdentityInsertCommands( entityPersister.getIdentifierTableName() )
 				: null;
 		this.insertMutationPlanner = new EntityInsertMutationPlanner( entityPersister, sessionFactory );
-		this.staticEndOperation = buildEndOperation( null, null, effectiveOptimisticLockStyle( null, null ), null );
+		final var staticLockStyle = entityPersister.optimisticLockStyle().isVersion()
+				&& entityPersister.getVersionMapping() != null ? OptimisticLockStyle.VERSION : OptimisticLockStyle.NONE;
+		this.staticEndOperation = buildEndOperation( null, null, staticLockStyle, null );
+		this.unversionedStaticEndOperation = staticLockStyle.isVersion()
+				? buildEndOperation( null, null, OptimisticLockStyle.NONE, null )
+				: staticEndOperation;
 	}
 
 	@Override
@@ -76,24 +86,18 @@ public class TemporalEntityMutationPlanContributor implements EntityMutationPlan
 			return false;
 		}
 
-		context.initializeStateForRevisionInsert( entityPersister.getIdentifierTableDescriptor() );
+		initializeStateForRevisionInsert( context, entityPersister.getIdentifierTableDescriptor() );
 
 		final OptimisticLockStyle effectiveOptLockStyle = effectiveOptimisticLockStyle(
 				context.previousVersion(),
 				context.previousState()
 		);
-		final MutationOperation endOperation = needsDynamicEndOperation(
+		final MutationOperation endOperation = resolveEndOperation(
 				context.rowId(),
 				context.previousState(),
-				effectiveOptLockStyle
-		)
-				? buildEndOperation(
-						context.rowId(),
-						context.previousState(),
-						effectiveOptLockStyle,
-						context.session()
-				)
-				: staticEndOperation;
+				effectiveOptLockStyle,
+				context.session()
+		);
 
 		final var end = createEndOperation(
 				context.ordinalBase(),
@@ -123,9 +127,7 @@ public class TemporalEntityMutationPlanContributor implements EntityMutationPlan
 		final Object rowId = entityEntry == null ? null : entityEntry.getRowId();
 		final OptimisticLockStyle effectiveOptLockStyle = effectiveOptimisticLockStyle( context.version(), loadedState );
 
-		final MutationOperation operation = needsDynamicEndOperation( rowId, loadedState, effectiveOptLockStyle )
-				? buildEndOperation( rowId, loadedState, effectiveOptLockStyle, context.session() )
-				: staticEndOperation;
+		final MutationOperation operation = resolveEndOperation( rowId, loadedState, effectiveOptLockStyle, context.session() );
 
 		final FlushOperation flushOperation = createEndOperation(
 				context.ordinalBase(),
@@ -180,8 +182,8 @@ public class TemporalEntityMutationPlanContributor implements EntityMutationPlan
 			UpdateContext context,
 			Consumer<FlushOperation> operationConsumer) {
 		generateReplacementValues( context );
-		final boolean[] effectiveInsertability = context.revisionInsertability(
-				insertMutationPlanner.resolveInsertability( context.state() ) );
+		final boolean[] effectiveInsertability = revisionInsertability(
+				context, insertMutationPlanner.resolveInsertability( context.state() ) );
 		final boolean reusingGeneratedIdentifier = entityPersister.isIdentifierAssignedByInsert();
 		final var generatedValuesCollector = reusingGeneratedIdentifier
 				? GeneratedValuesCollector.forReplacementInsert( entityPersister, sessionFactory )
@@ -280,13 +282,16 @@ public class TemporalEntityMutationPlanContributor implements EntityMutationPlan
 		}
 	}
 
-	private boolean needsDynamicEndOperation(
+	private MutationOperation resolveEndOperation(
 			Object rowId,
 			Object[] loadedState,
-			OptimisticLockStyle effectiveOptLockStyle) {
-		return rowId != null
-			|| effectiveOptLockStyle.isAllOrDirty()
-			|| entityPersister.hasPartitionedSelectionMapping() && loadedState != null;
+			OptimisticLockStyle effectiveOptLockStyle,
+			SharedSessionContractImplementor session) {
+		if ( rowId != null || effectiveOptLockStyle.isAllOrDirty()
+				|| entityPersister.hasPartitionedSelectionMapping() && loadedState != null ) {
+			return buildEndOperation( rowId, loadedState, effectiveOptLockStyle, session );
+		}
+		return effectiveOptLockStyle.isVersion() ? staticEndOperation : unversionedStaticEndOperation;
 	}
 
 	private OptimisticLockStyle effectiveOptimisticLockStyle(Object version, Object[] loadedState) {
@@ -321,9 +326,11 @@ public class TemporalEntityMutationPlanContributor implements EntityMutationPlan
 
 		addKeyRestriction( updateBuilder, tableDescriptor, rowId );
 		addTemporalEnding( updateBuilder );
-		addVersionRestriction( updateBuilder, tableDescriptor );
+		if ( effectiveOptLockStyle.isVersion() ) {
+			addVersionRestriction( updateBuilder, tableDescriptor );
+		}
 		addNonVersionOptimisticLockRestrictions( updateBuilder, tableDescriptor, loadedState, effectiveOptLockStyle, session );
-		addPartitionedSelectionRestrictions( updateBuilder, tableDescriptor, loadedState );
+		addPartitionedSelectionRestrictions( updateBuilder, tableDescriptor, loadedState, session );
 		TenantIdHelper.applyTenantRestriction( entityPersister, updateBuilder );
 
 		return updateBuilder.buildMutation().createMutationOperation( null, sessionFactory );
@@ -356,7 +363,7 @@ public class TemporalEntityMutationPlanContributor implements EntityMutationPlan
 		final var versionMapping = entityPersister.getVersionMapping();
 		if ( versionMapping != null
 				&& entityPersister.optimisticLockStyle().isVersion()
-				&& tableDescriptor.name().equals( versionMapping.getContainingTableExpression() ) ) {
+				&& tableDescriptor.name().equals( entityPersister.physicalTableNameForMutation( versionMapping ) ) ) {
 			updateBuilder.addOptimisticLockRestriction( versionMapping );
 		}
 	}
@@ -364,16 +371,13 @@ public class TemporalEntityMutationPlanContributor implements EntityMutationPlan
 	private void addPartitionedSelectionRestrictions(
 			TableUpdateBuilderStandard<MutationOperation> updateBuilder,
 			EntityTableDescriptor tableDescriptor,
-			Object[] loadedState) {
+			Object[] loadedState,
+			SharedSessionContractImplementor session) {
 		if ( loadedState != null && entityPersister.hasPartitionedSelectionMapping() ) {
-			for ( int i = 0; i < tableDescriptor.attributes().size(); i++ ) {
-				final var attribute = tableDescriptor.attributes().get( i );
-				attribute.forEachSelectable( (selectionIndex, selectableMapping) -> {
-					if ( selectableMapping.isPartitioned() ) {
-						updateBuilder.addKeyRestrictionLeniently( selectableMapping );
-					}
-				} );
-			}
+			PartitionKeyValue.addRestrictions( entityPersister,
+					table -> tableDescriptor.name().equals( table ) ? updateBuilder : null,
+					PartitionKeyValue.fromState( entityPersister, loadedState, session ),
+					TableMapping::getUpdateDetails );
 		}
 	}
 

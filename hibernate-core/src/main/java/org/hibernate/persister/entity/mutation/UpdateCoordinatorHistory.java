@@ -19,6 +19,7 @@ import org.hibernate.metamodel.mapping.TemporalMapping;
 import org.hibernate.persister.entity.EntityPersister;
 import org.hibernate.sql.ast.spi.query.expression.ColumnReference;
 import org.hibernate.sql.spi.mutation.MutationOperation;
+import org.hibernate.sql.spi.mutation.TableMapping;
 import org.hibernate.sql.model.MutationOperationGroup;
 import org.hibernate.sql.spi.mutation.MutationType;
 import org.hibernate.sql.ast.spi.model.builder.AssigningTableMutationBuilder;
@@ -123,6 +124,7 @@ public class UpdateCoordinatorHistory extends AbstractTemporalUpdateCoordinator 
 					id,
 					rowId,
 					oldVersion,
+					incomingOldValues == null ? values : incomingOldValues,
 					session,
 					temporalMapping,
 					historyEndUpdateGroup,
@@ -145,8 +147,10 @@ public class UpdateCoordinatorHistory extends AbstractTemporalUpdateCoordinator 
 			@Nullable Object[] incomingOldValues,
 			@Nullable int[] dirtyAttributeIndexes,
 			@Nonnull SharedSessionContractImplementor session) {
+		final var partitionKeys = PartitionKeyValue.fromState( entityPersister(),
+				incomingOldValues == null ? values : incomingOldValues, session );
 		final var updateDetails =
-				buildHistoryExcludedUpdateDetails( entity, rowId, dirtyAttributeIndexes, session );
+				buildHistoryExcludedUpdateDetails( entity, rowId, dirtyAttributeIndexes, partitionKeys, session );
 		if ( updateDetails != null ) {
 			final var mutationExecutor =
 					mutationExecutorService.createExecutor( resolveBatchKeyAccess( true, session ),
@@ -165,8 +169,8 @@ public class UpdateCoordinatorHistory extends AbstractTemporalUpdateCoordinator 
 					);
 				}
 
-				final var loadedState = incomingOldValues != null ? incomingOldValues : values;
-				bindPartitionColumnValueBindings( loadedState, session, jdbcValueBindings );
+				PartitionKeyValue.bindRestrictions( partitionKeys, identifierTableMapping.getTableName(),
+						jdbcValueBindings, updateDetails.operationGroup.getSingleOperation() );
 				bindHistoryExcludedUpdateValues( values, updateDetails, session, jdbcValueBindings );
 
 				mutationExecutor.execute(
@@ -190,6 +194,7 @@ public class UpdateCoordinatorHistory extends AbstractTemporalUpdateCoordinator 
 			@Nonnull Object entity,
 			@Nullable Object rowId,
 			@Nullable int[] dirtyAttributeIndexes,
+			@Nonnull List<PartitionKeyValue> partitionKeys,
 			@Nonnull SharedSessionContractImplementor session) {
 		if ( dirtyAttributeIndexes == null || dirtyAttributeIndexes.length == 0 ) {
 			return null;
@@ -246,7 +251,8 @@ public class UpdateCoordinatorHistory extends AbstractTemporalUpdateCoordinator 
 		if ( hasValues ) {
 			applyKeyRestriction( rowId, entityPersister(), tableUpdateBuilder, historyTableMapping );
 			applyCurrentRowRestriction( tableUpdateBuilder );
-			applyPartitionKeyRestriction( tableUpdateBuilder );
+			applyPartitionKeyRestriction( tableUpdateBuilder, identifierTableMapping.getTableName(),
+					partitionKeys, TableMapping::getUpdateDetails );
 			applyOptimisticLocking( tableUpdateBuilder );
 
 			return new HistoryExcludedUpdateDetails(

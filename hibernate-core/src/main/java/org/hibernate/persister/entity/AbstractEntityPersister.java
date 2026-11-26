@@ -105,6 +105,7 @@ import org.hibernate.mapping.Formula;
 import org.hibernate.mapping.Join;
 import org.hibernate.mapping.PersistentClass;
 import org.hibernate.mapping.Property;
+import org.hibernate.mapping.RootClass;
 import org.hibernate.mapping.Table;
 import org.hibernate.metamodel.UnsupportedMappingException;
 import org.hibernate.metamodel.mapping.Association;
@@ -368,6 +369,8 @@ public abstract class AbstractEntityPersister
 	private final boolean hasSubselectLoadableCollections;
 	private final boolean hasSubselectLoadableAttributes;
 	private final boolean hasPartitionedSelectionMapping;
+	// the attributes whose partition key columns belong to the primary key of their table
+	private final Set<String> primaryKeyPartitionAttributes;
 	private final boolean hasCollectionNotReferencingPK;
 	@Nullable
 	protected final String rowIdName;
@@ -626,6 +629,7 @@ public abstract class AbstractEntityPersister
 		hasSubselectLoadableCollections = persistentClass.hasSubselectLoadableCollections();
 		hasSubselectLoadableAttributes = persistentClass.hasSubselectLoadableAttributes();
 		hasPartitionedSelectionMapping = persistentClass.hasPartitionedSelectionMapping();
+		primaryKeyPartitionAttributes = primaryKeyPartitionAttributes( persistentClass );
 		hasCollectionNotReferencingPK = persistentClass.hasCollectionNotReferencingPK();
 
 		// IDENTIFIER
@@ -5792,6 +5796,14 @@ public abstract class AbstractEntityPersister
 		);
 	}
 
+	/// The auxiliary table expression for each table expression of a hierarchy with per-class auxiliary tables.
+	@Internal
+	public Map<String, String> auxiliaryTableExpressions(
+			@Nonnull RootClass rootClass, @Nonnull List<String> extraColumns,
+			@Nonnull MappingModelCreationProcess creationProcess) {
+		return Map.of();
+	}
+
 	/**
 	 * Consolidated these onto a single helper because the 2 pieces work in tandem.
 	 */
@@ -6144,9 +6156,14 @@ public abstract class AbstractEntityPersister
 						(role, process) -> new EntityRowIdMappingImpl( rowIdName, getTableName(), this ) );
 		discriminatorMapping = generateDiscriminatorMapping( bootEntityDescriptor );
 		final var rootClass = bootEntityDescriptor.getRootClass();
-		auxiliaryMapping = rootClass == bootEntityDescriptor ?
-				stateManagement.createAuxiliaryMapping( this, rootClass, creationProcess ) :
-				castNonNull( superMappingType ).getAuxiliaryMapping();
+		if ( rootClass == bootEntityDescriptor ) {
+			auxiliaryMapping = stateManagement.createAuxiliaryMapping( this, rootClass, creationProcess );
+		}
+		else {
+			final var inherited = castNonNull( superMappingType ).getAuxiliaryMapping();
+			auxiliaryMapping = inherited == null ? null
+					: inherited.forSubclass( this, bootEntityDescriptor, creationProcess );
+		}
 		if ( auxiliaryMapping instanceof SoftDeleteMapping && rootClass.getCustomSQLDelete() != null ) {
 			throw new UnsupportedMappingException( "Entity may not define both @SoftDelete and @SQLDelete" );
 		}
@@ -7380,6 +7397,30 @@ public abstract class AbstractEntityPersister
 		return hasPartitionedSelectionMapping;
 	}
 
+	@Override
+	public boolean isPartitionKeyInPrimaryKey(@Nonnull AttributeMapping attribute) {
+		return primaryKeyPartitionAttributes.contains( attribute.getAttributeName() );
+	}
+
+	private static Set<String> primaryKeyPartitionAttributes(PersistentClass persistentClass) {
+		Set<String> attributes = Set.of();
+		if ( persistentClass.hasPartitionedSelectionMapping() ) {
+			for ( var property : persistentClass.getPropertyClosure() ) {
+				final var value = property.getValue();
+				if ( value.isPartitionKey() ) {
+					final var primaryKey = value.getTable().getPrimaryKey();
+					if ( primaryKey != null && primaryKey.getColumns().containsAll( value.getColumns() ) ) {
+						if ( attributes.isEmpty() ) {
+							attributes = new HashSet<>();
+						}
+						attributes.add( property.getName() );
+					}
+				}
+			}
+		}
+		return attributes;
+	}
+
 	public abstract boolean isTableCascadeDeleteEnabled(int j);
 
 
@@ -7544,8 +7585,13 @@ public abstract class AbstractEntityPersister
 		if ( contains( rootTableKeyColumnNames, columnName ) ) {
 			return true;
 		}
+		// a backref inserts the key or index of a collection, but never updates it
+		final boolean[] propertyInsertability = getPropertyInsertability();
+		final boolean[] propertyUpdateability = getPropertyUpdateability();
 		for ( int i = 0; i < propertyColumnNames.length; i++ ) {
 			if ( contains( propertyColumnNames[i], columnName )
+					&& propertyInsertability[i]
+					&& propertyUpdateability[i]
 					&& isAllTrue( propertyColumnInsertable[i] )
 					&& isAllTrue( propertyColumnUpdateable[i] ) ) {
 				return true;

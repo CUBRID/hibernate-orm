@@ -27,14 +27,18 @@ import org.hibernate.engine.internal.CacheHelper.CacheLock;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.engine.spi.SharedSessionContractImplementor;
 import org.hibernate.persister.entity.EntityPersister;
+import org.hibernate.persister.entity.mutation.PartitionKeyValue;
 import org.hibernate.sql.spi.mutation.MutationOperation;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 
+import static java.util.Arrays.stream;
+import static java.util.stream.Collectors.toUnmodifiableSet;
 import static org.hibernate.internal.util.collections.CollectionHelper.linkedMapOfSize;
 
 /// [Decomposer][org.hibernate.action.queue.spi.decompose.entity.EntityActionDecomposer] for entity delete operations.
@@ -62,6 +66,7 @@ public class DeleteDecomposerStandard extends AbstractDecomposer<EntityDeleteAct
 	private Map<String, StatementShapeKey> staticNoVersionStatementShapeKeys;
 	private final EntityMutationPlanContributor mutationPlanContributor;
 	private final Map<String, ? extends TableMutation<?>> staticDeleteOperations;
+	private final Set<String> customDeleteTables;
 
 	private final String origin;
 
@@ -76,9 +81,15 @@ public class DeleteDecomposerStandard extends AbstractDecomposer<EntityDeleteAct
 		super( entityPersister, sessionFactory );
 
 		this.mutationPlanContributor = mutationPlanContributor;
+		this.customDeleteTables = entityPersister.hasPartitionedSelectionMapping()
+				? stream( entityPersister.getTableDescriptors() )
+						.filter( table -> !table.cascadeDeleteEnabled() && table.deleteDetails().getCustomSql() != null )
+						.map( TableDescriptor::name )
+						.collect( toUnmodifiableSet() )
+				: Set.of();
 		this.staticDeleteOperations = mutationPlanContributor.getStaticDeleteOperations();
 		this.staticDeleteMutations = staticDeleteOperations.isEmpty()
-				? generateMutations( "", null, null, true, null )
+				? generateMutations( "", null, null, null, true, null )
 				: Map.of();
 		this.staticJdbcDeleteMutations = generateStaticJdbcOperations( staticDeleteMutations );
 		this.staticStatementShapeKeys = generateStaticStatementShapeKeys( staticJdbcDeleteMutations );
@@ -155,15 +166,19 @@ public class DeleteDecomposerStandard extends AbstractDecomposer<EntityDeleteAct
 		final Object[] originalLoadedState = entityEntry == null ? null : entityEntry.getLoadedState();
 		final Object[] loadedState = filteredState == null ? originalLoadedState
 				: filteredState.physicalState( originalLoadedState, entityPersister );
+		// the current state of a read-only entity, which has no snapshot, may differ from
+		// its persistent state, so its partition key is unknown
+		final var partitionKeys =
+				PartitionKeyValue.forDelete( entityPersister, identifier, loadedState, customDeleteTables, session );
 		final Object rowId = entityEntry != null ? entityEntry.getRowId() : null;
 
 		// Decide between static and dynamic delete operations (matches AbstractDeleteCoordinator pattern)
 		// Use dynamic if:
 		// - IMPLIED optimistic locking (ALL/DIRTY) AND we have loadedState
-		// - entity defines a partition, but we can not know the partition (because loaded state is unknown)
+		// - the partition key is null, or its value is unknown
 		// - OR rowId is null but entityPersister has rowId mapping
 		if ( (isImpliedOptimisticLocking && loadedState != null)
-				|| ((entityEntry == null || entityEntry.getLoadedState() == null) && entityPersister.hasPartitionedSelectionMapping())
+				|| PartitionKeyValue.needsDynamicRestriction( entityPersister, partitionKeys )
 				|| (rowId == null && entityPersister.hasRowId()) ) {
 			final var previousOperation = decomposeDynamicDelete(
 					ordinalBase,
@@ -173,6 +188,7 @@ public class DeleteDecomposerStandard extends AbstractDecomposer<EntityDeleteAct
 					version,
 					state,
 					loadedState,
+					partitionKeys,
 					getUpdatedAttributeIndexesForDeletedEntity( decompositionContext, action ),
 					definedOptimisticLockStyle,
 					postDeleteHandling,
@@ -190,6 +206,7 @@ public class DeleteDecomposerStandard extends AbstractDecomposer<EntityDeleteAct
 					version,
 					state,
 					loadedState,
+					partitionKeys,
 					getUpdatedAttributeIndexesForDeletedEntity( decompositionContext, action ),
 					definedOptimisticLockStyle,
 					postDeleteHandling,
@@ -284,13 +301,16 @@ public class DeleteDecomposerStandard extends AbstractDecomposer<EntityDeleteAct
 			Object version,
 			Object[] state,
 			Object[] loadedState,
+			List<PartitionKeyValue> partitionKeys,
 			int[] sameFlushUpdatedAttributeIndexes,
 			OptimisticLockStyle optimisticLockStyle,
 			PostDeleteHandling postDeleteHandling,
 			SharedSessionContractImplementor session,
 			Consumer<FlushOperation> operationConsumer) {
-		final var dynamicMutations =
-				generateMutations( rowId, loadedState, sameFlushUpdatedAttributeIndexes, true, session );
+		final boolean applyVersion = instance != null;
+		final var dynamicMutations = generateMutations(
+				rowId, loadedState, partitionKeys, sameFlushUpdatedAttributeIndexes, applyVersion, session
+		);
 
 		int localOrd = 0;
 		FlushOperation previousOperation = null;
@@ -310,8 +330,9 @@ public class DeleteDecomposerStandard extends AbstractDecomposer<EntityDeleteAct
 							version,
 							state,
 							loadedState,
+							partitionKeys,
 							sameFlushUpdatedAttributeIndexes,
-							optimisticLockStyle
+							applyVersion ? optimisticLockStyle : OptimisticLockStyle.NONE
 					),
 					ordinalBase * 1_000 + (localOrd++),
 					origin,
@@ -336,6 +357,7 @@ public class DeleteDecomposerStandard extends AbstractDecomposer<EntityDeleteAct
 			Object version,
 			Object[] state,
 			Object[] loadedState,
+			List<PartitionKeyValue> partitionKeys,
 			int[] sameFlushUpdatedAttributeIndexes,
 			OptimisticLockStyle optimisticLockStyle,
 			PostDeleteHandling postDeleteHandling,
@@ -346,7 +368,7 @@ public class DeleteDecomposerStandard extends AbstractDecomposer<EntityDeleteAct
 		if ( instance == null ) {
 			applyVersion = false;
 			if ( staticNoVersionDeleteMutations == null ) {
-				staticNoVersionDeleteMutations = generateMutations("", null, null, false, session );
+				staticNoVersionDeleteMutations = generateMutations( "", null, null, null, false, session );
 				staticNoVersionJdbcDeleteMutations = generateStaticJdbcOperations( staticNoVersionDeleteMutations );
 				staticNoVersionStatementShapeKeys = generateStaticStatementShapeKeys( staticNoVersionJdbcDeleteMutations );
 			}
@@ -376,6 +398,7 @@ public class DeleteDecomposerStandard extends AbstractDecomposer<EntityDeleteAct
 							applyVersion ? version : null,
 							applyVersion ? state : null,
 							applyVersion ? loadedState : null,
+							partitionKeys,
 							applyVersion ? sameFlushUpdatedAttributeIndexes : null,
 							applyVersion ? optimisticLockStyle : OptimisticLockStyle.NONE
 					),
@@ -477,6 +500,7 @@ public class DeleteDecomposerStandard extends AbstractDecomposer<EntityDeleteAct
 	protected Map<String, TableDelete> generateMutations(
 			Object rowId,
 			Object[] loadedState,
+			List<PartitionKeyValue> partitionKeys,
 			int[] sameFlushUpdatedAttributeIndexes,
 			boolean applyVersion,
 			SharedSessionContractImplementor session) {
@@ -494,6 +518,7 @@ public class DeleteDecomposerStandard extends AbstractDecomposer<EntityDeleteAct
 				deleteBuilders,
 				rowId,
 				loadedState,
+				partitionKeys,
 				sameFlushUpdatedAttributeIndexes,
 				applyVersion,
 				session
@@ -529,6 +554,7 @@ public class DeleteDecomposerStandard extends AbstractDecomposer<EntityDeleteAct
 			Map<String, TableDeleteBuilder> tableDeleteBuilders,
 			Object rowId,
 			Object[] loadedState,
+			List<PartitionKeyValue> partitionKeys,
 			int[] sameFlushUpdatedAttributeIndexes,
 			boolean applyVersion,
 			SharedSessionContractImplementor session) {
@@ -549,7 +575,10 @@ public class DeleteDecomposerStandard extends AbstractDecomposer<EntityDeleteAct
 					sameFlushUpdatedAttributeIndexes,
 					session
 			);
-			applyPartitionRestrictions( tableDeleteBuilders );
+			if ( entityPersister.hasPartitionedSelectionMapping() ) {
+				PartitionKeyValue.addRestrictions( entityPersister, tableDeleteBuilders::get, partitionKeys,
+						TableMapping::getDeleteDetails );
+			}
 		}
 		tableDeleteBuilders.values().forEach( builder -> TenantIdHelper.applyTenantRestriction( entityPersister, builder ) );
 	}
@@ -657,21 +686,4 @@ public class DeleteDecomposerStandard extends AbstractDecomposer<EntityDeleteAct
 		return false;
 	}
 
-	private void applyPartitionRestrictions(Map<String, TableDeleteBuilder> builders) {
-		final var attributeMappings = entityPersister.getAttributeMappings();
-		for ( int m = 0; m < attributeMappings.size(); m++ ) {
-			final var attributeMapping = attributeMappings.get( m );
-			final int jdbcTypeCount = attributeMapping.getJdbcTypeCount();
-			for ( int i = 0; i < jdbcTypeCount; i++ ) {
-				final var selectableMapping = attributeMapping.getSelectable( i );
-				if ( selectableMapping.isPartitioned() ) {
-					final String tableNameForMutation = entityPersister.physicalTableNameForMutation( selectableMapping );
-					final TableDeleteBuilder builder = builders.get( tableNameForMutation );
-					if ( builder != null ) {
-						builder.addKeyRestrictionLeniently( selectableMapping );
-					}
-				}
-			}
-		}
-	}
 }

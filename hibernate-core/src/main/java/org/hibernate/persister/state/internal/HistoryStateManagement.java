@@ -1,5 +1,7 @@
 package org.hibernate.persister.state.internal;
 
+import java.util.List;
+
 import jakarta.annotation.Nonnull;
 import jakarta.annotation.Nullable;
 
@@ -39,6 +41,8 @@ import org.hibernate.persister.state.spi.StateManagement;
 import org.hibernate.persister.state.spi.StateManagementGraphIntegration;
 import org.hibernate.persister.state.spi.StateManagementLegacyIntegration;
 
+import static org.hibernate.boot.model.internal.TemporalHelper.ROW_END;
+import static org.hibernate.boot.model.internal.TemporalHelper.ROW_START;
 import static org.hibernate.metamodel.mapping.internal.MappingModelCreationHelper.getTableIdentifierExpression;
 import static org.hibernate.persister.state.internal.AbstractStateManagement.isInsertAllowed;
 import static org.hibernate.persister.state.internal.AbstractStateManagement.isUpdatePossible;
@@ -221,11 +225,15 @@ public final class HistoryStateManagement implements StateManagement, StateManag
 			@Nonnull RootClass rootClass,
 			@Nonnull MappingModelCreationProcess creationProcess) {
 		final var temporalTable = rootClass.getAuxiliaryTable();
-		String tableName = temporalTable == null
+		final var entityPersister = (AbstractEntityPersister) persister;
+		final String tableName = temporalTable == null
 				? persister.getIdentifierTableName()
-				: ( (AbstractEntityPersister) persister )
-						.determineTableName( temporalTable );
-		return new TemporalMappingImpl( rootClass, tableName, creationProcess );
+				: entityPersister.determineTableName( temporalTable );
+		final var dialect = creationProcess.getCreationContext().getDialect();
+		final var temporalColumns = List.of( rootClass.getAuxiliaryColumn( ROW_START ).getQuotedName( dialect ),
+				rootClass.getAuxiliaryColumn( ROW_END ).getQuotedName( dialect ) );
+		return new TemporalMappingImpl( rootClass, tableName,
+				entityPersister.auxiliaryTableExpressions( rootClass, temporalColumns, creationProcess ), creationProcess );
 	}
 
 	@Nullable

@@ -35,6 +35,7 @@ import org.hibernate.persister.filter.internal.StaticFilterAliasGenerator;
 import org.hibernate.internal.util.collections.JoinedList;
 import org.hibernate.mapping.Column;
 import org.hibernate.mapping.PersistentClass;
+import org.hibernate.mapping.RootClass;
 import org.hibernate.metamodel.mapping.AuditMapping;
 import org.hibernate.metamodel.mapping.DiscriminatorValue;
 import org.hibernate.metamodel.mapping.EntityDiscriminatorMapping;
@@ -42,6 +43,7 @@ import org.hibernate.metamodel.mapping.EntityMappingType;
 import org.hibernate.metamodel.mapping.SelectableConsumer;
 import org.hibernate.metamodel.mapping.SelectableMapping;
 import org.hibernate.metamodel.mapping.TableDetails;
+import org.hibernate.metamodel.mapping.internal.MappingModelCreationProcess;
 import org.hibernate.metamodel.mapping.internal.SqlTypedMappingImpl;
 import org.hibernate.metamodel.spi.RuntimeModelCreationContext;
 import org.hibernate.persister.state.spi.StateManagement;
@@ -308,6 +310,27 @@ public class UnionSubclassEntityPersister extends AbstractEntityPersister {
 	}
 
 	@Override
+	public Map<String, String> auxiliaryTableExpressions(
+			@Nonnull RootClass rootClass, @Nonnull List<String> extraColumns,
+			@Nonnull MappingModelCreationProcess creationProcess) {
+		if ( !rootClass.hasSubclasses() ) {
+			return Map.of();
+		}
+		final var metadata = creationProcess.getCreationContext().getMetadata();
+		final var expressions = new HashMap<String, String>();
+		for ( var bootClass : new JoinedList<>( List.<PersistentClass>of( rootClass ),
+				unmodifiableList( rootClass.getSubclasses() ) ) ) {
+			expressions.put( determineTableName( bootClass.getTable() ),
+					determineTableName( bootClass.getAuxiliaryTable() ) );
+			if ( bootClass.hasSubclasses() ) {
+				expressions.put( creationProcess.getEntityPersister( bootClass.getEntityName() ).getTableName(),
+						generateAuxiliarySubquery( bootClass, extraColumns, metadata ) );
+			}
+		}
+		return Map.copyOf( expressions );
+	}
+
+	@Override
 	public boolean needsDiscriminator() {
 		return false;
 	}
@@ -505,52 +528,36 @@ public class UnionSubclassEntityPersister extends AbstractEntityPersister {
 	 */
 	@Deprecated(forRemoval = true)
 	protected @Nonnull String generateSubquery(@Nonnull PersistentClass model) {
-		return generateSubquery( model, null, null );
+		return generateSubquery( model, getFactory().getRuntimeMetamodels() );
 	}
 
 	protected @Nonnull String generateSubquery(@Nonnull PersistentClass model, @Nonnull MappingContext mappingContext) {
-		return generateSubquery( model, null, null, mappingContext );
+		return generateSubquery( model, false, List.of(), mappingContext );
 	}
 
 	/**
-	 * Generate a union subquery for the given model.
+	 * Generate a union subquery over the auxiliary tables of the given model.
 	 *
-	 * @param tableNameResolver when non-null, resolves original table names to
-	 *                          alternative names (e.g. audit table names)
 	 * @param extraSelectExpressions additional column expressions to include in
 	 *                               each SELECT of the union (e.g. REV, REVTYPE)
 	 */
-	/**
-	 * @deprecated Use {@link #generateSubquery(PersistentClass, MappingContext)} instead
-	 */
-	@Deprecated(forRemoval = true)
-	public @Nonnull String generateSubquery(
+	public @Nonnull String generateAuxiliarySubquery(
 			@Nonnull PersistentClass model,
-			@Nullable Function<String, String> tableNameResolver,
-			@Nullable List<String> extraSelectExpressions) {
-		return generateSubquery( model, tableNameResolver, extraSelectExpressions, getFactory().getRuntimeMetamodels() );
+			@Nonnull List<String> extraSelectExpressions,
+			@Nonnull MappingContext mappingContext) {
+		return generateSubquery( model, true, extraSelectExpressions, mappingContext );
 	}
 
-	/**
-	 * Generate a union subquery for the given model.
-	 *
-	 * @param model the persistent class model to create the subquery for
-	 * @param tableNameResolver when non-null, resolves original table names to
-	 *                          alternative names (e.g. audit table names)
-	 * @param extraSelectExpressions additional column expressions to include in
-	 *                               each SELECT of the union (e.g. REV, REVTYPE)
-	 * @param mappingContext the mapping context
-	 */
-	public @Nonnull String generateSubquery(
+	private @Nonnull String generateSubquery(
 			@Nonnull PersistentClass model,
-			@Nullable Function<String, String> tableNameResolver,
-			@Nullable List<String> extraSelectExpressions,
+			boolean useAuxiliaryTables,
+			@Nonnull List<String> extraSelectExpressions,
 			@Nonnull MappingContext mappingContext) {
 		final var factory = getFactory();
 		final var sqlStringGenerationContext = factory.getSqlStringGenerationContext();
 		if ( !model.hasSubclasses() ) {
-			final String qualifiedName = model.getTable().getQualifiedName( sqlStringGenerationContext );
-			return tableNameResolver != null ? tableNameResolver.apply( qualifiedName ) : qualifiedName;
+			return useAuxiliaryTables ? determineTableName( model.getAuxiliaryTable() )
+					: model.getTable().getQualifiedName( sqlStringGenerationContext );
 		}
 		else {
 			final var classes =
@@ -565,8 +572,6 @@ public class UnionSubclassEntityPersister extends AbstractEntityPersister {
 			}
 			final var dialect = factory.getJdbcServices().getDialect();
 			final var subquery = new StringBuilder().append( "(" );
-			// A non-null table name resolver means we use auxiliary-table columns for the projection
-			final boolean useAuxiliaryTables = tableNameResolver != null;
 			for ( var persistentClass : classes ) {
 				final var table = persistentClass.getTable();
 				if ( !table.isAbstractUnionTable() ) {
@@ -587,18 +592,14 @@ public class UnionSubclassEntityPersister extends AbstractEntityPersister {
 						subquery.append( column.getQuotedName( dialect ) )
 								.append( ", " );
 					}
-					if ( extraSelectExpressions != null ) {
-						for ( var expr : extraSelectExpressions ) {
-							subquery.append( expr ).append( ", " );
-						}
+					for ( var expr : extraSelectExpressions ) {
+						subquery.append( expr ).append( ", " );
 					}
 					subquery.append( persistentClass.getSubclassId() )
 							.append( " as clazz_" );
-					final String qualifiedName = table.getQualifiedName( sqlStringGenerationContext );
-					subquery.append( " from " )
-							.append( tableNameResolver != null
-									? tableNameResolver.apply( qualifiedName )
-									: qualifiedName );
+					subquery.append( " from " ).append( useAuxiliaryTables
+							? determineTableName( projectionTable )
+							: table.getQualifiedName( sqlStringGenerationContext ) );
 					if ( table.isSubselect() ) {
 						// some databases require a derived table to have an alias
 						subquery.append( SUBSELECT_ALIAS );

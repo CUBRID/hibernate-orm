@@ -16,9 +16,11 @@ import org.hibernate.engine.spi.SharedSessionContractImplementor;
 import org.hibernate.metamodel.mapping.AttributeMapping;
 import org.hibernate.metamodel.mapping.ModelPart.JdbcValueBiConsumer;
 import org.hibernate.persister.entity.EntityPersister;
+import org.hibernate.persister.entity.mutation.PartitionKeyValue;
 
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.util.List;
 
 /// @author Steve Ebersole
 public class EntityDeleteBindPlan implements BindPlan, OperationResultChecker {
@@ -59,6 +61,7 @@ public class EntityDeleteBindPlan implements BindPlan, OperationResultChecker {
 	private final Object version;
 	private final Object[] state;
 	private final Object[] loadedState;
+	private final List<PartitionKeyValue> partitionKeys;
 	private final int[] sameFlushUpdatedAttributeIndexes;
 	private final OptimisticLockStyle effectiveOptLockStyle;
 
@@ -74,6 +77,7 @@ public class EntityDeleteBindPlan implements BindPlan, OperationResultChecker {
 			Object version,
 			Object[] state,
 			Object[] loadedState,
+			List<PartitionKeyValue> partitionKeys,
 			int[] sameFlushUpdatedAttributeIndexes,
 			OptimisticLockStyle effectiveOptLockStyle) {
 		this.tableDescriptor = tableDescriptor;
@@ -83,6 +87,7 @@ public class EntityDeleteBindPlan implements BindPlan, OperationResultChecker {
 		this.version = version;
 		this.state = state;
 		this.loadedState = loadedState;
+		this.partitionKeys = partitionKeys;
 		this.sameFlushUpdatedAttributeIndexes = sameFlushUpdatedAttributeIndexes;
 		this.effectiveOptLockStyle = effectiveOptLockStyle;
 	}
@@ -123,10 +128,9 @@ public class EntityDeleteBindPlan implements BindPlan, OperationResultChecker {
 			applyNonVersionOptLocking( valueBindings, session );
 		}
 
-		// Apply partitioned selection restrictions if needed
-		if ( entityPersister.hasPartitionedSelectionMapping() && loadedState != null ) {
-			applyPartitionedSelectionRestrictions( valueBindings, session );
-		}
+		PartitionKeyValue.bindRestrictions(
+				partitionKeys, tableDescriptor.name(), valueBindings, flushOperation.getJdbcOperation()
+		);
 	}
 
 	private void breakDownKeyJdbcValue(
@@ -168,22 +172,22 @@ public class EntityDeleteBindPlan implements BindPlan, OperationResultChecker {
 		if ( versionMapping == null ) {
 			return;
 		}
-		if ( tableDescriptor.name().equals( versionMapping.getContainingTableExpression() ) ) {
-				this.valueBindings = jdbcValueBindings;
-				try {
-					versionMapping.decompose(
-							version,
-							0,
-							this,
-							null,
-							VERSION_RESTRICTION_BINDER,
-							session
-					);
-				}
-				finally {
-					this.valueBindings = null;
-				}
+		if ( tableDescriptor.name().equals( entityPersister.physicalTableNameForMutation( versionMapping ) ) ) {
+			this.valueBindings = jdbcValueBindings;
+			try {
+				versionMapping.decompose(
+						version,
+						0,
+						this,
+						null,
+						VERSION_RESTRICTION_BINDER,
+						session
+				);
 			}
+			finally {
+				this.valueBindings = null;
+			}
+		}
 	}
 
 	protected void applyNonVersionOptLocking(
@@ -242,41 +246,6 @@ public class EntityDeleteBindPlan implements BindPlan, OperationResultChecker {
 			}
 		}
 		return false;
-	}
-
-	protected void applyPartitionedSelectionRestrictions(
-			JdbcValueBindings jdbcValueBindings,
-			SharedSessionContractImplementor session) {
-		for ( int i = 0; i < tableDescriptor.attributes().size(); i++ ) {
-			var attribute = tableDescriptor.attributes().get( i );
-
-			attribute.forEachSelectable( (selectionIndex, selectableMapping) -> {
-				if ( selectableMapping.isPartitioned() ) {
-					final String tableNameForMutation = entityPersister.physicalTableNameForMutation( selectableMapping );
-					final Object value = loadedState != null
-							? loadedState[attribute.getStateArrayPosition()]
-							: null;
-					if ( value != null ) {
-						attribute.decompose(
-								value,
-								0,
-								jdbcValueBindings,
-								null,
-								(valueIndex, bindings, noop, jdbcValue, selectable) -> {
-									if ( selectable.isPartitioned() ) {
-										bindings.bindValue(
-												jdbcValue,
-												selectable.getSelectionExpression(),
-												ParameterUsage.RESTRICT
-										);
-									}
-								},
-								session
-						);
-					}
-				}
-			} );
-		}
 	}
 
 	@Override
