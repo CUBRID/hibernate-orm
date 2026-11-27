@@ -1,16 +1,17 @@
 package org.hibernate.sql.ast.spi.model;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
+import org.hibernate.dialect.sql.ast.spi.OptionalTableUpdateOperationRequest;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.jdbc.Expectation;
 import org.hibernate.persister.entity.mutation.InsertCoordinatorStandard;
 import org.hibernate.sql.ast.spi.SqlAstWalker;
 import org.hibernate.sql.exec.spi.JdbcParameterBinder;
 import org.hibernate.sql.spi.mutation.MutationOperation;
-import org.hibernate.dialect.sql.ast.spi.OptionalTableUpdateOperationRequest;
 import org.hibernate.sql.spi.mutation.MutationTarget;
 import org.hibernate.sql.spi.mutation.TableMapping;
 import org.hibernate.sql.spi.mutation.ValuesAnalysis;
@@ -27,7 +28,8 @@ public class OptionalTableUpdate
 		implements LogicalTableUpdate<MutationOperation> {
 	private final List<ColumnValueBinding> valueBindings;
 	private final boolean versionedTarget;
-	private final boolean assignsEveryColumn;
+	private final boolean requiresExistingRowForOptimisticLock;
+	private final List<String> unassignedColumns;
 
 	public OptionalTableUpdate(
 			MutatingTableReference mutatingTable,
@@ -40,22 +42,19 @@ public class OptionalTableUpdate
 				mutatingTable,
 				mutationTarget,
 				versionedTarget,
-				true,
+				insertOnlyColumns( valueBindings ),
 				valueBindings,
 				keyRestrictionBindings,
 				optLockRestrictionBindings
 		);
 	}
 
-	/// @param assignsEveryColumn whether the assignments include every column of
-	///                           the table, so that the row of an optional table
-	///                           has no data exactly when every assigned value
-	///                           is null
+	/// @param unassignedColumns mapped state columns left untouched by the update
 	public OptionalTableUpdate(
 			MutatingTableReference mutatingTable,
 			MutationTarget mutationTarget,
 			boolean versionedTarget,
-			boolean assignsEveryColumn,
+			List<String> unassignedColumns,
 			List<ColumnValueBinding> valueBindings,
 			List<ColumnValueBinding> keyRestrictionBindings,
 			List<ColumnValueBinding> optLockRestrictionBindings) {
@@ -64,7 +63,7 @@ public class OptionalTableUpdate
 				mutationTarget,
 				"upsert for " + mutationTarget.getRolePath(),
 				versionedTarget,
-				assignsEveryColumn,
+				unassignedColumns,
 				valueBindings,
 				keyRestrictionBindings,
 				optLockRestrictionBindings
@@ -84,7 +83,7 @@ public class OptionalTableUpdate
 				mutationTarget,
 				comment,
 				versionedTarget,
-				true,
+				insertOnlyColumns( valueBindings ),
 				valueBindings,
 				keyRestrictionBindings,
 				optLockRestrictionBindings
@@ -96,7 +95,7 @@ public class OptionalTableUpdate
 			MutationTarget mutationTarget,
 			String comment,
 			boolean versionedTarget,
-			boolean assignsEveryColumn,
+			List<String> unassignedColumns,
 			List<ColumnValueBinding> valueBindings,
 			List<ColumnValueBinding> keyRestrictionBindings,
 			List<ColumnValueBinding> optLockRestrictionBindings) {
@@ -110,7 +109,15 @@ public class OptionalTableUpdate
 		);
 		this.valueBindings = valueBindings;
 		this.versionedTarget = versionedTarget;
-		this.assignsEveryColumn = assignsEveryColumn;
+		this.requiresExistingRowForOptimisticLock = mutatingTable.isOptional() && !versionedTarget
+				&& optLockRestrictionBindings instanceof ColumnValueBindingList bindings
+				&& bindings.hasNonNullOldValue();
+		this.unassignedColumns = mutatingTable.isOptional() ? List.copyOf( unassignedColumns ) : List.of();
+	}
+
+	private static List<String> insertOnlyColumns(List<ColumnValueBinding> valueBindings) {
+		return valueBindings.stream().filter( binding -> !binding.isAttributeUpdatable() )
+				.map( binding -> binding.getColumnReference().getColumnExpression() ).toList();
 	}
 
 	@Override
@@ -150,6 +157,33 @@ public class OptionalTableUpdate
 		return valueBindings;
 	}
 
+	/// A non-null old column value in a DIRTY or ALL restriction proves the row existed.
+	public boolean requiresExistingRowForOptimisticLock() {
+		return requiresExistingRowForOptimisticLock;
+	}
+
+	/// The columns whose stored values contribute to the state of the updated row.
+	public List<String> getUnassignedColumns() {
+		return unassignedColumns;
+	}
+
+	/// The bindings that can supply state to a newly inserted optional row.
+	public List<ColumnValueBinding> getInsertableStateBindings() {
+		final List<ColumnValueBinding> bindings = new ArrayList<>();
+		for ( var binding : valueBindings ) {
+			if ( binding.isAttributeInsertable() ) {
+				bindings.add( binding );
+			}
+		}
+		for ( var binding : getKeyBindings() ) {
+			// A partition key may supply mapped state through its key binding.
+			if ( unassignedColumns.contains( binding.getColumnReference().getColumnExpression() ) ) {
+				bindings.add( binding );
+			}
+		}
+		return bindings;
+	}
+
 	@Override
 	public void forEachValueBinding(BiConsumer<Integer, ColumnValueBinding> consumer) {
 		forEachThing( valueBindings, consumer );
@@ -168,13 +202,7 @@ public class OptionalTableUpdate
 				|| tableMapping.getInsertDetails().isDynamicMutation()
 				|| tableMapping.getDeleteDetails().getCustomSql() != null
 				|| tableMapping.getUpdateDetails().getCustomSql() != null
-				|| tableMapping.getUpdateDetails().isDynamicMutation()
-				|| tableMapping.isOptional() && !assignsEveryColumn ) {
-			// Fallback to the optional table mutation operation because we have to execute user specified SQL
-			// and with dynamic update insert we have to avoid using merge for optional table because
-			// it can cause the deletion of the row when an attribute is set to null.
-			// Likewise, when a column of an optional table is not assigned, a merge cannot tell
-			// whether the row has data, and would delete it when every assigned value is null.
+				|| tableMapping.getUpdateDetails().isDynamicMutation() ) {
 			return new OptionalTableUpdateOperation( getMutationTarget(), this );
 		}
 		return factory.getJdbcServices().getDialect().createOptionalTableUpdateOperation(
